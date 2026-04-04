@@ -24,3 +24,8 @@ std = ["rvm-types/std", "rvm-partition/std"]
 alloc = ["rvm-types/alloc", "rvm-partition/alloc"]
 ## Enable scheduler integration for coherence-weighted scheduling feedback.
 sched = ["rvm-sched"]
+## Enable integration bridge to ruvector-mincut, ruvector-solver, and
+## ruvector-coherence crates. The feature flag activates bridge code that
+## provides pluggable backend traits; actual ruvector crate deps will be
+## added once those crates gain no_std support.
+ruvector = []

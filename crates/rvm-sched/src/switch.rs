@@ -8,26 +8,35 @@
 //! is handled by the HAL crate. This module provides the safe stub
 //! interface and timing measurement scaffolding.
 
+use rvm_types::{RvmError, RvmResult};
+
 /// Saved register state for a partition context.
 ///
 /// Captures the minimal AArch64 EL2-visible state required to resume
 /// execution in a partition. The HAL populates these fields from the
 /// actual hardware registers.
+///
+/// Cache-line aligned (`align(64)`) to prevent false sharing between
+/// per-CPU switch contexts. Hot fields accessed during context switch
+/// (`vttbr_el2`, `elr_el2`, `spsr_el2`, `sp_el1`) are placed first
+/// to fit in the first cache line.
 #[derive(Debug, Clone, Copy)]
+#[repr(C, align(64))]
 pub struct SwitchContext {
-    /// General-purpose registers x0-x30.
-    pub gp_regs: [u64; 31],
-    /// Stack pointer for EL1 (SP_EL1).
-    pub sp_el1: u64,
-    /// Exception Link Register for EL2 (return address).
-    pub elr_el2: u64,
-    /// Saved Program Status Register for EL2.
-    pub spsr_el2: u64,
     /// Stage-2 translation table base register (VTTBR_EL2).
     ///
     /// Encodes the VMID in bits \[55:48\] and the physical address of
     /// the stage-2 page table root in bits \[47:1\].
     pub vttbr_el2: u64,
+    /// Exception Link Register for EL2 (return address).
+    pub elr_el2: u64,
+    /// Saved Program Status Register for EL2.
+    pub spsr_el2: u64,
+    /// Stack pointer for EL1 (SP_EL1).
+    pub sp_el1: u64,
+    /// General-purpose registers x0-x30 (cold path, accessed after
+    /// the hot fields above).
+    pub gp_regs: [u64; 31],
 }
 
 impl SwitchContext {
@@ -35,60 +44,127 @@ impl SwitchContext {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            gp_regs: [0u64; 31],
-            sp_el1: 0,
+            vttbr_el2: 0,
             elr_el2: 0,
             spsr_el2: 0,
-            vttbr_el2: 0,
+            sp_el1: 0,
+            gp_regs: [0u64; 31],
         }
     }
 
-    /// Stub: save the current CPU registers into this context.
+    /// Initialise this context with a given entry point, stack pointer,
+    /// VMID, and stage-2 page table base.
     ///
-    /// In a real implementation, this would execute MRS instructions to
-    /// read SP_EL1, ELR_EL2, SPSR_EL2, and VTTBR_EL2, plus capture x0-x30.
-    /// This stub is a no-op -- the HAL agent fills in the assembly.
-    pub fn save_context(&mut self) {
-        // HAL stub: real implementation reads hardware registers.
-        // Example (not real code):
-        //   MRS x0, SP_EL1        -> self.sp_el1
-        //   MRS x0, ELR_EL2       -> self.elr_el2
-        //   MRS x0, SPSR_EL2      -> self.spsr_el2
-        //   MRS x0, VTTBR_EL2     -> self.vttbr_el2
-        //   STP x0, x1, ...       -> self.gp_regs
+    /// This prepares a context for first entry into a guest partition.
+    pub fn init(
+        &mut self,
+        entry_point: u64,
+        stack_pointer: u64,
+        vmid: u16,
+        s2_table_base: u64,
+    ) {
+        self.elr_el2 = entry_point;
+        self.sp_el1 = stack_pointer;
+        // AArch64 EL1h mode, all DAIF masked.
+        self.spsr_el2 = 0x3C5;
+        // VTTBR_EL2: VMID in [55:48], table base in [47:1].
+        self.vttbr_el2 = ((vmid as u64) << 48) | (s2_table_base & 0x0000_FFFF_FFFF_FFFE);
     }
 
-    /// Stub: restore CPU registers from this context.
-    ///
-    /// The dual of [`save_context`](Self::save_context). In a real
-    /// implementation, this writes MSR instructions for each system register
-    /// and restores x0-x30 via LDP.
-    pub fn restore_context(&self) {
-        // HAL stub: real implementation writes hardware registers.
-        // Example (not real code):
-        //   MSR SP_EL1, x0
-        //   MSR ELR_EL2, x0
-        //   MSR SPSR_EL2, x0
-        //   MSR VTTBR_EL2, x0
-        //   LDP x0, x1, ...
+    /// Extract the VMID from the VTTBR_EL2 field.
+    #[must_use]
+    pub const fn vmid(&self) -> u16 {
+        (self.vttbr_el2 >> 48) as u16
     }
+
+    /// Extract the stage-2 table base address from VTTBR_EL2.
+    #[must_use]
+    pub const fn s2_table_base(&self) -> u64 {
+        self.vttbr_el2 & 0x0000_FFFF_FFFF_FFFE
+    }
+
+    /// Save the current context from a source context.
+    ///
+    /// On AArch64 bare-metal, this would execute MRS instructions.
+    /// For host builds and testing, this copies the fields from `src`
+    /// to simulate a register save.
+    pub fn save_from(&mut self, src: &SwitchContext) {
+        *self = *src;
+    }
+
+    /// Check whether this context represents a valid entry point
+    /// (non-zero ELR and VTTBR).
+    #[must_use]
+    pub const fn is_valid_entry(&self) -> bool {
+        self.elr_el2 != 0 && self.vttbr_el2 != 0
+    }
+
+    /// Return the entry point address (ELR_EL2).
+    #[must_use]
+    pub const fn entry_point(&self) -> u64 {
+        self.elr_el2
+    }
+
+    /// Hypervisor address space boundary.
+    ///
+    /// Addresses at or above this value belong to the hypervisor's
+    /// own higher-half virtual address space and must never be used
+    /// as a guest entry point.
+    const HYPERVISOR_BASE: u64 = 0xFFFF_0000_0000_0000;
+
+    /// Validate that this context is safe to switch into.
+    ///
+    /// Checks:
+    /// 1. Entry point (ELR_EL2) is not zero.
+    /// 2. Entry point is below the hypervisor address space boundary.
+    ///
+    /// Returns `Err(InvalidPartitionState)` if invalid.
+    pub const fn validate_for_switch(&self) -> RvmResult<()> {
+        if self.elr_el2 == 0 {
+            return Err(RvmError::InvalidPartitionState);
+        }
+        if self.elr_el2 >= Self::HYPERVISOR_BASE {
+            return Err(RvmError::InvalidPartitionState);
+        }
+        Ok(())
+    }
+}
+
+/// Result of a partition switch, capturing both contexts and timing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchResult {
+    /// VMID of the partition we switched away from.
+    pub from_vmid: u16,
+    /// VMID of the partition we switched to.
+    pub to_vmid: u16,
+    /// Number of nanoseconds elapsed (0 on host builds).
+    pub elapsed_ns: u64,
 }
 
 /// Perform a partition switch from `from` to `to`.
 ///
 /// This is the hot path. Steps:
-/// 1. Save current registers into `from`.
+/// 1. Save current registers into `from` (on AArch64: MRS sequence).
 /// 2. Write `to.vttbr_el2` to VTTBR_EL2 (stage-2 page table base).
 /// 3. TLB invalidate (`TLBI VMALLE1`).
 /// 4. Barrier (`DSB ISH` + `ISB`).
 /// 5. Restore registers from `to`.
 ///
-/// Returns the number of nanoseconds elapsed (for profiling).
-/// The stub implementation always returns 0 -- the HAL agent provides the
-/// real timer-based measurement.
-pub fn partition_switch(from: &mut SwitchContext, to: &SwitchContext) -> u64 {
+/// On host builds (test/development), step 1 is a no-op since there are
+/// no hardware registers. On AArch64 bare-metal, rvm-hal provides the
+/// actual assembly sequences.
+#[inline]
+pub fn partition_switch(from: &mut SwitchContext, to: &SwitchContext) -> RvmResult<SwitchResult> {
+    // Validate the target context before switching.
+    to.validate_for_switch()?;
+
+    let from_vmid = from.vmid();
+    let to_vmid = to.vmid();
+
     // Step 1: save current register state.
-    from.save_context();
+    // On host builds, `from` already holds the correct state (set by
+    // the caller via `init()`). On AArch64, rvm-hal::context_switch
+    // performs the actual MRS/MSR sequence.
 
     // Step 2: update VTTBR_EL2.
     // HAL stub: MSR VTTBR_EL2, to.vttbr_el2
@@ -101,10 +177,13 @@ pub fn partition_switch(from: &mut SwitchContext, to: &SwitchContext) -> u64 {
     // HAL stub: DSB ISH; ISB
 
     // Step 5: restore target register state.
-    to.restore_context();
+    // HAL stub: LDP x0, x1, ... from `to`
 
-    // Stub: no real timer available without HAL.
-    0
+    Ok(SwitchResult {
+        from_vmid,
+        to_vmid,
+        elapsed_ns: 0, // Real timing from HAL timer.
+    })
 }
 
 #[cfg(test)]
@@ -122,85 +201,127 @@ mod tests {
     }
 
     #[test]
-    fn test_save_restore_stub_is_noop() {
+    fn test_init_sets_fields() {
         let mut ctx = SwitchContext::new();
-        ctx.gp_regs[0] = 0xCAFE;
-        ctx.sp_el1 = 0x1000;
-        ctx.elr_el2 = 0x2000;
-        ctx.spsr_el2 = 0x3C5;
-        ctx.vttbr_el2 = 0xDEAD_0000;
+        ctx.init(0x4000_0000, 0x8000, 0x01, 0x0000_1000_0000_0000);
 
-        // save_context is a stub, so it should not clobber our values.
-        ctx.save_context();
-        assert_eq!(ctx.gp_regs[0], 0xCAFE);
-        assert_eq!(ctx.sp_el1, 0x1000);
-
-        // restore_context is also a stub.
-        ctx.restore_context();
-        assert_eq!(ctx.vttbr_el2, 0xDEAD_0000);
+        assert_eq!(ctx.elr_el2, 0x4000_0000);
+        assert_eq!(ctx.sp_el1, 0x8000);
+        assert_eq!(ctx.spsr_el2, 0x3C5); // EL1h, DAIF masked
+        assert_eq!(ctx.vmid(), 0x01);
+        assert_eq!(ctx.s2_table_base(), 0x0000_1000_0000_0000);
     }
 
     #[test]
-    fn test_switch_context_fields_preserved() {
+    fn test_vmid_extraction() {
+        let mut ctx = SwitchContext::new();
+        ctx.vttbr_el2 = 0x0042_0000_0000_0000; // VMID = 0x42
+        assert_eq!(ctx.vmid(), 0x42);
+    }
+
+    #[test]
+    fn test_s2_table_base_extraction() {
+        let mut ctx = SwitchContext::new();
+        ctx.vttbr_el2 = 0x00FF_0000_DEAD_BEE0;
+        assert_eq!(ctx.s2_table_base(), 0x0000_0000_DEAD_BEE0);
+    }
+
+    #[test]
+    fn test_is_valid_entry() {
+        let ctx = SwitchContext::new();
+        assert!(!ctx.is_valid_entry());
+
+        let mut ctx2 = SwitchContext::new();
+        ctx2.init(0x4000_0000, 0x8000, 1, 0x1000);
+        assert!(ctx2.is_valid_entry());
+    }
+
+    #[test]
+    fn test_save_from_copies_state() {
+        let mut src = SwitchContext::new();
+        src.gp_regs[0] = 0xCAFE;
+        src.sp_el1 = 0x1000;
+        src.elr_el2 = 0x2000;
+        src.spsr_el2 = 0x3C5;
+        src.vttbr_el2 = 0xDEAD_0000;
+
+        let mut dst = SwitchContext::new();
+        dst.save_from(&src);
+
+        assert_eq!(dst.gp_regs[0], 0xCAFE);
+        assert_eq!(dst.sp_el1, 0x1000);
+        assert_eq!(dst.elr_el2, 0x2000);
+        assert_eq!(dst.vttbr_el2, 0xDEAD_0000);
+    }
+
+    #[test]
+    fn test_switch_preserves_contexts() {
         let mut from = SwitchContext::new();
-        from.gp_regs[0] = 0xAAAA;
-        from.gp_regs[30] = 0xBBBB;
-        from.sp_el1 = 0x8000;
-        from.elr_el2 = 0x4000_0000;
-        from.spsr_el2 = 0x3C5;
-        from.vttbr_el2 = 0x0001_0000_0000_0000;
+        from.init(0x4000_0000, 0x8000, 1, 0x0001_0000_0000_0000);
 
         let mut to = SwitchContext::new();
-        to.gp_regs[0] = 0xCCCC;
-        to.sp_el1 = 0xF000;
-        to.elr_el2 = 0x8000_0000;
-        to.spsr_el2 = 0x1C5;
-        to.vttbr_el2 = 0x0002_0000_0000_0000;
+        to.init(0x8000_0000, 0xF000, 2, 0x0002_0000_0000_0000);
 
-        let _ticks = partition_switch(&mut from, &to);
+        let result = partition_switch(&mut from, &to).unwrap();
 
-        // `from` fields should still hold the values we set (stub save is noop).
-        assert_eq!(from.gp_regs[0], 0xAAAA);
-        assert_eq!(from.sp_el1, 0x8000);
+        assert_eq!(result.from_vmid, 1);
+        assert_eq!(result.to_vmid, 2);
+        assert_eq!(result.elapsed_ns, 0);
 
-        // `to` fields should be unchanged (restore is noop).
-        assert_eq!(to.gp_regs[0], 0xCCCC);
-        assert_eq!(to.vttbr_el2, 0x0002_0000_0000_0000);
+        // Both contexts should be unchanged.
+        assert_eq!(from.elr_el2, 0x4000_0000);
+        assert_eq!(to.elr_el2, 0x8000_0000);
     }
 
     #[test]
-    fn test_partition_switch_returns_stub_timing() {
+    fn test_partition_switch_returns_vmids() {
+        let mut a = SwitchContext::new();
+        a.init(0x1000, 0x2000, 0x0A, 0x0001_0000_0000_0000);
+
+        let mut b = SwitchContext::new();
+        b.init(0x3000, 0x4000, 0x0B, 0x0002_0000_0000_0000);
+
+        let result = partition_switch(&mut a, &b).unwrap();
+        assert_eq!(result.from_vmid, 0x0A);
+        assert_eq!(result.to_vmid, 0x0B);
+    }
+
+    #[test]
+    fn test_switch_rejects_zero_entry_point() {
         let mut from = SwitchContext::new();
-        let to = SwitchContext::new();
+        from.init(0x4000_0000, 0x8000, 1, 0x0001_0000_0000_0000);
 
-        let elapsed = partition_switch(&mut from, &to);
-        // Stub always returns 0 -- real timing comes from the HAL.
-        assert_eq!(elapsed, 0);
+        let to = SwitchContext::new(); // elr_el2 = 0
+        assert_eq!(
+            partition_switch(&mut from, &to),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
-    fn test_partition_switch_is_repeatable() {
+    fn test_switch_rejects_hypervisor_address() {
         let mut from = SwitchContext::new();
-        let to = SwitchContext::new();
+        from.init(0x4000_0000, 0x8000, 1, 0x0001_0000_0000_0000);
 
-        let t1 = partition_switch(&mut from, &to);
-        let t2 = partition_switch(&mut from, &to);
-        // Stub returns the same value every time.
-        assert_eq!(t1, t2);
+        let mut to = SwitchContext::new();
+        // Entry point in hypervisor address space.
+        to.init(0xFFFF_0000_0000_1000, 0x8000, 2, 0x0002_0000_0000_0000);
+        assert_eq!(
+            partition_switch(&mut from, &to),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
-    fn test_different_vttbr_values() {
-        // Verify two contexts with different VTTBR values both survive a switch.
-        let mut ctx_a = SwitchContext::new();
-        ctx_a.vttbr_el2 = 0x0001_0000_0000_0000; // VMID 0x01
+    fn test_switch_is_repeatable() {
+        let mut from = SwitchContext::new();
+        from.init(0x4000_0000, 0x8000, 1, 0x0001_0000_0000_0000);
 
-        let mut ctx_b = SwitchContext::new();
-        ctx_b.vttbr_el2 = 0x0002_0000_0000_0000; // VMID 0x02
+        let mut to = SwitchContext::new();
+        to.init(0x8000_0000, 0xF000, 2, 0x0002_0000_0000_0000);
 
-        partition_switch(&mut ctx_a, &ctx_b);
-
-        assert_eq!(ctx_a.vttbr_el2, 0x0001_0000_0000_0000);
-        assert_eq!(ctx_b.vttbr_el2, 0x0002_0000_0000_0000);
+        let r1 = partition_switch(&mut from, &to).unwrap();
+        let r2 = partition_switch(&mut from, &to).unwrap();
+        assert_eq!(r1.elapsed_ns, r2.elapsed_ns);
     }
 }

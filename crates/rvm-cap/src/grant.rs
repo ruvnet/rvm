@@ -47,7 +47,11 @@ impl Default for GrantPolicy {
 
 /// Validates a grant request and produces the derived token.
 ///
-/// Returns `(derived_token, depth)` on success.
+/// If the source has `GRANT_ONCE` (but not `GRANT`), `consume_grant_once`
+/// is set to `true` in the return value so the caller can strip the right
+/// from the source slot.
+///
+/// Returns `(derived_token, depth, consume_grant_once)` on success.
 pub fn validate_grant(
     source: &CapSlot,
     requested_rights: CapRights,
@@ -55,11 +59,15 @@ pub fn validate_grant(
     badge: u64,
     epoch: u32,
     policy: GrantPolicy,
-) -> CapResult<(CapToken, u8)> {
+) -> CapResult<(CapToken, u8, bool)> {
     let source_rights = source.token.rights();
 
-    // Source must hold GRANT right to delegate.
-    if !source_rights.contains(CapRights::GRANT) {
+    let has_grant = source_rights.contains(CapRights::GRANT);
+    let has_grant_once = policy.allow_grant_once
+        && source_rights.contains(CapRights::GRANT_ONCE);
+
+    // Source must hold GRANT or GRANT_ONCE to delegate.
+    if !has_grant && !has_grant_once {
         return Err(CapError::GrantNotPermitted);
     }
 
@@ -68,8 +76,11 @@ pub fn validate_grant(
         return Err(CapError::RightsEscalation);
     }
 
-    // Delegation depth check.
-    let new_depth = source.depth + 1;
+    // Delegation depth check with overflow protection.
+    let new_depth = source
+        .depth
+        .checked_add(1)
+        .ok_or(CapError::DelegationDepthExceeded)?;
     if new_depth > policy.max_depth {
         return Err(CapError::DelegationDepthExceeded);
     }
@@ -83,7 +94,11 @@ pub fn validate_grant(
         epoch,
     );
 
-    Ok((derived_token, new_depth))
+    // Signal that GRANT_ONCE should be consumed if it was the only
+    // grant authority (source has GRANT_ONCE but not GRANT).
+    let consume = !has_grant && has_grant_once;
+
+    Ok((derived_token, new_depth, consume))
 }
 
 #[cfg(test)]
@@ -94,8 +109,7 @@ mod tests {
     fn make_source(rights: CapRights, depth: u8) -> CapSlot {
         CapSlot {
             token: CapToken::new(1, CapType::Region, rights, 0),
-            generation: 0,
-            is_valid: true,
+            generation: 1,
             owner: PartitionId::new(1),
             depth,
             parent_index: u32::MAX,
@@ -115,9 +129,10 @@ mod tests {
     fn test_valid_grant() {
         let source = make_source(all_rights(), 0);
         let policy = GrantPolicy::new();
-        let (token, depth) = validate_grant(&source, CapRights::READ, 10, 42, 0, policy).unwrap();
+        let (token, depth, consume) = validate_grant(&source, CapRights::READ, 10, 42, 0, policy).unwrap();
         assert_eq!(token.rights(), CapRights::READ);
         assert_eq!(depth, 1);
+        assert!(!consume); // Source has full GRANT, so GRANT_ONCE is not consumed.
     }
 
     #[test]
@@ -148,15 +163,14 @@ mod tests {
     fn test_grant_preserves_type() {
         let source = CapSlot {
             token: CapToken::new(1, CapType::CommEdge, all_rights(), 5),
-            generation: 0,
-            is_valid: true,
+            generation: 1,
             owner: PartitionId::new(1),
             depth: 0,
             parent_index: u32::MAX,
             badge: 0,
         };
         let policy = GrantPolicy::new();
-        let (token, _) = validate_grant(&source, CapRights::READ, 10, 0, 5, policy).unwrap();
+        let (token, _, _) = validate_grant(&source, CapRights::READ, 10, 0, 5, policy).unwrap();
         assert_eq!(token.cap_type(), CapType::CommEdge);
         assert_eq!(token.epoch(), 5);
     }
@@ -165,7 +179,41 @@ mod tests {
     fn test_grant_at_max_minus_one() {
         let source = make_source(all_rights(), 7);
         let policy = GrantPolicy::new();
-        let (_, depth) = validate_grant(&source, CapRights::READ, 10, 0, 0, policy).unwrap();
+        let (_, depth, _) = validate_grant(&source, CapRights::READ, 10, 0, 0, policy).unwrap();
         assert_eq!(depth, 8);
+    }
+
+    #[test]
+    fn test_grant_once_consumed() {
+        // Source has GRANT_ONCE but not GRANT.
+        let rights = CapRights::READ.union(CapRights::GRANT_ONCE);
+        let source = make_source(rights, 0);
+        let policy = GrantPolicy::new();
+        let (token, depth, consume) =
+            validate_grant(&source, CapRights::READ, 10, 0, 0, policy).unwrap();
+        assert_eq!(token.rights(), CapRights::READ);
+        assert_eq!(depth, 1);
+        assert!(consume); // GRANT_ONCE should be consumed.
+    }
+
+    #[test]
+    fn test_grant_once_not_consumed_when_grant_also_present() {
+        // Source has both GRANT and GRANT_ONCE -- GRANT takes precedence.
+        let rights = CapRights::READ
+            .union(CapRights::GRANT)
+            .union(CapRights::GRANT_ONCE);
+        let source = make_source(rights, 0);
+        let policy = GrantPolicy::new();
+        let (_, _, consume) =
+            validate_grant(&source, CapRights::READ, 10, 0, 0, policy).unwrap();
+        assert!(!consume);
+    }
+
+    #[test]
+    fn test_depth_overflow_protection() {
+        let source = make_source(all_rights(), u8::MAX);
+        let policy = GrantPolicy::with_max_depth(u8::MAX);
+        let result = validate_grant(&source, CapRights::READ, 10, 0, 0, policy);
+        assert_eq!(result, Err(CapError::DelegationDepthExceeded));
     }
 }

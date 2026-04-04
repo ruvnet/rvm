@@ -17,6 +17,12 @@
 //! - [`context`]: Proof context with builder pattern for P2 validation
 //! - [`engine`]: Unified proof engine (P1 -> P2 -> witness pipeline)
 //! - [`policy`]: P2 policy rules with constant-time evaluation
+//! - [`constant_time`]: Constant-time comparison utilities
+//! - [`signer`]: Witness signing traits and implementations (ADR-142)
+//! - [`tee`]: TEE attestation trait definitions (ADR-142)
+//! - [`tee_provider`]: Software TEE quote provider (ADR-142 Phase 3)
+//! - [`tee_verifier`]: Software TEE quote verifier (ADR-142 Phase 3)
+//! - [`tee_signer`]: TEE-backed witness signer pipeline (ADR-142 Phase 3)
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -30,11 +36,37 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod constant_time;
 pub mod context;
 pub mod engine;
 pub mod policy;
+pub mod signer;
+pub mod tee;
+pub mod tee_provider;
+pub mod tee_verifier;
+pub mod tee_signer;
 
-use rvm_types::{CapRights, CapToken, RvmError, RvmResult, WitnessHash};
+// Re-export signer traits and types for ergonomic access.
+pub use signer::{SignatureError, WitnessSigner};
+#[cfg(feature = "crypto-sha256")]
+pub use signer::HmacSha256WitnessSigner;
+#[cfg(feature = "crypto-sha256")]
+pub use signer::DualHmacSigner;
+#[cfg(feature = "crypto-sha256")]
+pub use signer::{KeyBundle, derive_witness_key, derive_key_bundle, dev_measurement};
+#[cfg(feature = "ed25519")]
+pub use signer::Ed25519WitnessSigner;
+#[cfg(any(test, feature = "null-signer"))]
+pub use signer::NullSigner;
+pub use tee::{TeePlatform, TeeQuoteProvider, TeeQuoteVerifier};
+#[cfg(feature = "crypto-sha256")]
+pub use tee_provider::SoftwareTeeProvider;
+#[cfg(feature = "crypto-sha256")]
+pub use tee_verifier::SoftwareTeeVerifier;
+#[cfg(feature = "crypto-sha256")]
+pub use tee_signer::TeeWitnessSigner;
+
+use rvm_types::{CapRights, CapToken, RvmError, RvmResult, WitnessHash, fnv1a_64};
 
 /// The tier of proof required for a state transition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -86,14 +118,33 @@ impl Proof {
     }
 }
 
+/// Compute the FNV-1a hash of proof data and pack it into a 32-byte
+/// `WitnessHash`.
+///
+/// The 8-byte FNV-1a digest is placed in the first 8 bytes (little-endian),
+/// with the remaining 24 bytes zeroed. This matches how `Proof::hash_proof`
+/// commitments are constructed.
+#[must_use]
+pub fn compute_data_hash(data: &[u8]) -> WitnessHash {
+    let digest = fnv1a_64(data);
+    let mut bytes = [0u8; 32];
+    bytes[..8].copy_from_slice(&digest.to_le_bytes());
+    WitnessHash::from_bytes(bytes)
+}
+
 /// Verify that a proof is valid for the given commitment.
 ///
-/// This is a stub implementation. The real implementation will dispatch
-/// to tier-specific verifiers (SHA-256, witness chain, ZK).
+/// Dispatches to tier-specific verifiers:
+/// - **Hash**: Computes FNV-1a over the proof data and compares to the commitment.
+/// - **Witness**: Validates that proof data contains a valid witness chain
+///   with correct `prev_hash` linkage.
+/// - **Zk**: Not yet implemented; requires TEE support (see ADR for TEE integration).
 ///
 /// # Errors
 ///
-/// Returns [`RvmError::ProofInvalid`] if the commitment does not match or the proof is empty.
+/// Returns [`RvmError::ProofInvalid`] if the commitment does not match,
+/// the proof data is empty, or tier-specific verification fails.
+/// Returns [`RvmError::Unsupported`] for ZK proofs (TEE required).
 pub fn verify(proof: &Proof, expected_commitment: &WitnessHash) -> RvmResult<()> {
     if proof.commitment != *expected_commitment {
         return Err(RvmError::ProofInvalid);
@@ -101,16 +152,69 @@ pub fn verify(proof: &Proof, expected_commitment: &WitnessHash) -> RvmResult<()>
 
     match proof.tier {
         ProofTier::Hash => {
-            // Stub: accept any non-empty preimage for now.
             if proof.data_len == 0 {
-                Err(RvmError::ProofInvalid)
-            } else {
-                Ok(())
+                return Err(RvmError::ProofInvalid);
             }
-        }
-        ProofTier::Witness | ProofTier::Zk => {
-            // Stub: higher-tier verification not yet implemented.
+            // Hash the proof data and compare to the commitment.
+            let computed = compute_data_hash(&proof.data[..proof.data_len as usize]);
+            if computed != proof.commitment {
+                return Err(RvmError::ProofInvalid);
+            }
             Ok(())
+        }
+        ProofTier::Witness => {
+            // Witness chain verification: the proof data must contain at
+            // least one 16-byte witness record pair (prev_hash: u64,
+            // record_hash: u64) and each record's prev_hash must equal
+            // the preceding record's record_hash.
+            if proof.data_len == 0 {
+                return Err(RvmError::ProofInvalid);
+            }
+            let data = &proof.data[..proof.data_len as usize];
+            // Each link is 16 bytes: 8 bytes prev_hash + 8 bytes record_hash.
+            const LINK_SIZE: usize = 16;
+            if data.len() < LINK_SIZE {
+                return Err(RvmError::ProofInvalid);
+            }
+            let link_count = data.len() / LINK_SIZE;
+            if link_count == 0 {
+                return Err(RvmError::ProofInvalid);
+            }
+            // Walk the chain: for each consecutive pair of links, verify
+            // that link[i].record_hash == link[i+1].prev_hash.
+            for i in 0..link_count.saturating_sub(1) {
+                let offset = i * LINK_SIZE;
+                let record_hash = u64::from_le_bytes([
+                    data[offset + 8],
+                    data[offset + 9],
+                    data[offset + 10],
+                    data[offset + 11],
+                    data[offset + 12],
+                    data[offset + 13],
+                    data[offset + 14],
+                    data[offset + 15],
+                ]);
+                let next_offset = (i + 1) * LINK_SIZE;
+                let next_prev_hash = u64::from_le_bytes([
+                    data[next_offset],
+                    data[next_offset + 1],
+                    data[next_offset + 2],
+                    data[next_offset + 3],
+                    data[next_offset + 4],
+                    data[next_offset + 5],
+                    data[next_offset + 6],
+                    data[next_offset + 7],
+                ]);
+                if record_hash != next_prev_hash {
+                    return Err(RvmError::ProofInvalid);
+                }
+            }
+            Ok(())
+        }
+        ProofTier::Zk => {
+            // ZK proof verification requires TEE support which is not
+            // yet available. Silently accepting would be a security hole.
+            Err(RvmError::Unsupported)
         }
     }
 }

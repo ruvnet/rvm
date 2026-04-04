@@ -76,7 +76,18 @@ impl<const MAX: usize> QuotaTracker<MAX> {
     }
 
     /// Register a partition with the given quota.
+    ///
+    /// Returns `Err(InvalidPartitionState)` if the partition is already
+    /// registered. Use [`update_quota`] to change an existing quota.
     pub fn register(&mut self, partition: PartitionId, quota: PartitionQuota) -> RvmResult<()> {
+        // Reject duplicate registration.
+        for slot in self.quotas.iter() {
+            if let Some(entry) = slot {
+                if entry.0 == partition {
+                    return Err(RvmError::InvalidPartitionState);
+                }
+            }
+        }
         if self.count >= MAX {
             return Err(RvmError::ResourceLimitExceeded);
         }
@@ -490,5 +501,17 @@ mod tests {
             tracker.check_and_record_ipc(pid(99)),
             Err(RvmError::PartitionNotFound)
         );
+    }
+
+    #[test]
+    fn test_duplicate_registration_rejected() {
+        let mut tracker = QuotaTracker::<4>::new();
+        tracker.register(pid(1), PartitionQuota::default()).unwrap();
+        assert_eq!(
+            tracker.register(pid(1), PartitionQuota::default()),
+            Err(RvmError::InvalidPartitionState)
+        );
+        // Count should still be 1 -- the duplicate was not added.
+        assert!(tracker.usage(pid(1)).is_ok());
     }
 }

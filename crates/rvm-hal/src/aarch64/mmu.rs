@@ -119,11 +119,12 @@ impl Stage2PageTable {
     ///
     /// # Errors
     ///
-    /// Returns `RvmError::MemoryExhausted` if no L2 table slots remain.
-    /// Returns `RvmError::InternalError` if addresses are misaligned.
+    /// Returns `RvmError::AlignmentError` if addresses are not 2 MB-aligned.
+    /// Returns `RvmError::OutOfMemory` if no L2 table slots remain.
+    /// Returns `RvmError::MemoryOverlap` if the L2 entry is already occupied.
     pub fn map_2mb_block(&mut self, ipa: u64, pa: u64, attrs: u64) -> RvmResult<()> {
         if ipa & (L2_BLOCK_SIZE - 1) != 0 || pa & (L2_BLOCK_SIZE - 1) != 0 {
-            return Err(RvmError::InternalError);
+            return Err(RvmError::AlignmentError);
         }
 
         let l1_index = ((ipa >> 30) & 0x1FF) as usize;
@@ -135,6 +136,14 @@ impl Stage2PageTable {
         }
 
         let l2_idx = self.l1_to_l2_index(l1_index);
+
+        // SECURITY: Refuse to overwrite an existing mapping. Silent
+        // overwrites could let a guest or buggy caller redirect
+        // physical memory mappings, breaking isolation guarantees.
+        if self.l2_tables[l2_idx][l2_index] & s2_desc::VALID != 0 {
+            return Err(RvmError::MemoryOverlap);
+        }
+
         // Build block descriptor: PA | attrs | AF | VALID (bit[1]=0 for block).
         let descriptor = (pa & 0x0000_FFFF_FFE0_0000) | attrs | s2_desc::AF | s2_desc::VALID;
         self.l2_tables[l2_idx][l2_index] = descriptor;
@@ -242,16 +251,41 @@ pub struct Aarch64Mmu {
     page_table: Stage2PageTable,
     /// Whether the MMU has been installed (VTTBR_EL2 written).
     installed: bool,
+    /// VMID assigned to this partition for TLB tagging.
+    vmid: u16,
 }
 
 impl Aarch64Mmu {
-    /// Create a new AArch64 MMU with empty page tables.
+    /// Create a new AArch64 MMU with empty page tables and the given VMID.
+    ///
+    /// Each partition must receive a unique VMID so that its TLB entries
+    /// are isolated from other partitions.
+    #[must_use]
+    pub const fn new_with_vmid(vmid: u16) -> Self {
+        Self {
+            page_table: Stage2PageTable::new(),
+            installed: false,
+            vmid,
+        }
+    }
+
+    /// Create a new AArch64 MMU with empty page tables and VMID 0.
+    ///
+    /// Provided for backward compatibility. Prefer [`new_with_vmid`] for
+    /// multi-partition setups.
     #[must_use]
     pub const fn new() -> Self {
         Self {
             page_table: Stage2PageTable::new(),
             installed: false,
+            vmid: 0,
         }
+    }
+
+    /// Return the VMID assigned to this MMU.
+    #[must_use]
+    pub const fn vmid(&self) -> u16 {
+        self.vmid
     }
 
     /// Return a mutable reference to the underlying page table.
@@ -266,6 +300,8 @@ impl Aarch64Mmu {
 
     /// Install the page table into VTTBR_EL2 and enable stage-2 translation.
     ///
+    /// The VMID stored in this MMU instance is written into VTTBR_EL2\[63:48\].
+    ///
     /// # Safety
     ///
     /// The page table must remain pinned in memory for the lifetime of
@@ -277,7 +313,7 @@ impl Aarch64Mmu {
         // These functions contain their own internal unsafe blocks for
         // register access; we call them from an unsafe fn context.
         super::boot::configure_vtcr_el2();
-        super::boot::set_vttbr_el2(base);
+        super::boot::set_vttbr_el2(base, self.vmid);
         super::boot::invalidate_stage2_tlb();
         self.installed = true;
     }
@@ -285,9 +321,16 @@ impl Aarch64Mmu {
 
 impl crate::MmuOps for Aarch64Mmu {
     fn map_page(&mut self, guest: GuestPhysAddr, host: PhysAddr) -> RvmResult<()> {
-        // Stage-2 maps 2MB blocks. Round down to 2MB alignment.
-        let ipa = guest.as_u64() & !(L2_BLOCK_SIZE - 1);
-        let pa = host.as_u64() & !(L2_BLOCK_SIZE - 1);
+        // Stage-2 maps 2MB blocks. Callers MUST provide 2MB-aligned
+        // addresses. Silently rounding down is a security hazard: the
+        // caller believes they mapped address X, but the hardware maps
+        // the 2MB region containing X, potentially exposing adjacent
+        // memory.
+        let ipa = guest.as_u64();
+        let pa = host.as_u64();
+        if ipa & (L2_BLOCK_SIZE - 1) != 0 || pa & (L2_BLOCK_SIZE - 1) != 0 {
+            return Err(RvmError::AlignmentError);
+        }
         self.page_table.map_ram_2mb(ipa, pa)
     }
 

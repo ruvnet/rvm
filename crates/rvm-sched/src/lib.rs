@@ -61,7 +61,7 @@ pub use per_cpu::PerCpuScheduler;
 pub use priority::compute_priority;
 pub use scheduler::Scheduler;
 pub use smp::{CpuState, SmpCoordinator};
-pub use switch::{SwitchContext, partition_switch};
+pub use switch::{SwitchContext, SwitchResult, partition_switch};
 
 // Re-export commonly used types.
 pub use rvm_types::{CoherenceScore, CutPressure, PartitionId, RvmError, RvmResult};

@@ -35,11 +35,20 @@ const NONCE_RING_SIZE: usize = 4096;
 #[allow(clippy::struct_field_names)]
 pub struct PolicyEvaluator {
     nonce_ring: [u64; NONCE_RING_SIZE],
+    /// Hash-indexed nonce lookup: `nonce_hash[nonce % SIZE]` stores the
+    /// nonce value for O(1) replay detection instead of O(N) linear scan.
+    nonce_hash: [u64; NONCE_RING_SIZE],
     nonce_write_pos: usize,
     /// Monotonic watermark: any nonce at or below this value is rejected
     /// outright, even if it has fallen off the ring buffer. This
     /// prevents replaying very old nonces after ring eviction.
     nonce_watermark: u64,
+    /// Whether nonce == 0 is allowed to bypass replay checks.
+    ///
+    /// Default is `false` (zero nonce is rejected). Set to `true` only
+    /// for boot-time or backwards-compatible contexts where a sentinel
+    /// nonce is acceptable.
+    allow_zero_nonce: bool,
 }
 
 impl Default for PolicyEvaluator {
@@ -50,14 +59,25 @@ impl Default for PolicyEvaluator {
 
 impl PolicyEvaluator {
     /// Create a new policy evaluator with an empty nonce ring.
+    ///
+    /// By default, nonce == 0 is **rejected** (no zero-nonce bypass).
+    /// Use [`set_allow_zero_nonce`](Self::set_allow_zero_nonce) to enable
+    /// the sentinel behaviour for boot-time contexts.
     #[must_use]
     #[allow(clippy::large_stack_arrays)]
     pub const fn new() -> Self {
         Self {
             nonce_ring: [0u64; NONCE_RING_SIZE],
+            nonce_hash: [0u64; NONCE_RING_SIZE],
             nonce_write_pos: 0,
             nonce_watermark: 0,
+            allow_zero_nonce: false,
         }
+    }
+
+    /// Set whether nonce == 0 is allowed to bypass replay checks.
+    pub fn set_allow_zero_nonce(&mut self, allow: bool) {
+        self.allow_zero_nonce = allow;
     }
 
     /// Evaluate a single policy rule against the given context.
@@ -165,18 +185,23 @@ impl PolicyEvaluator {
     ///
     /// Also rejects nonces at or below the monotonic watermark to
     /// prevent replaying very old nonces that have fallen off the ring.
+    ///
+    /// Nonce == 0 is treated as replayed (rejected) unless
+    /// `allow_zero_nonce` is set. This prevents callers from silently
+    /// skipping replay protection by passing a default/uninitialized
+    /// nonce value.
     fn is_nonce_replayed(&self, nonce: u64) -> bool {
         if nonce == 0 {
-            return false; // Zero nonce is a sentinel, not subject to replay.
+            return !self.allow_zero_nonce;
         }
         // Watermark check: reject any nonce at or below the low-water mark.
         if nonce <= self.nonce_watermark {
             return true;
         }
-        for &entry in &self.nonce_ring {
-            if entry == nonce {
-                return true;
-            }
+        // O(1) hash-indexed lookup instead of linear scan.
+        let hash_slot = (nonce as usize) % NONCE_RING_SIZE;
+        if self.nonce_hash[hash_slot] == nonce {
+            return true;
         }
         false
     }
@@ -184,6 +209,9 @@ impl PolicyEvaluator {
     /// Record a nonce as used and advance the watermark on wrap.
     fn record_nonce(&mut self, nonce: u64) {
         self.nonce_ring[self.nonce_write_pos] = nonce;
+        // Populate hash index for O(1) lookup.
+        let hash_slot = (nonce as usize) % NONCE_RING_SIZE;
+        self.nonce_hash[hash_slot] = nonce;
         self.nonce_write_pos = (self.nonce_write_pos + 1) % NONCE_RING_SIZE;
         // Advance watermark when the write pointer wraps around.
         if self.nonce_write_pos == 0 {
@@ -271,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn test_zero_nonce_not_replayed() {
+    fn test_zero_nonce_rejected_by_default() {
         let mut evaluator = PolicyEvaluator::new();
         let ctx = ProofContextBuilder::new(PartitionId::new(1))
             .capability_handle(1)
@@ -280,7 +308,22 @@ mod tests {
             .nonce(0)
             .build();
 
-        // Zero nonce should always pass replay check.
+        // Zero nonce is now rejected by default (no free bypass).
+        assert_eq!(evaluator.evaluate_all_rules(&ctx), Err(RvmError::ProofInvalid));
+    }
+
+    #[test]
+    fn test_zero_nonce_allowed_when_policy_permits() {
+        let mut evaluator = PolicyEvaluator::new();
+        evaluator.set_allow_zero_nonce(true);
+        let ctx = ProofContextBuilder::new(PartitionId::new(1))
+            .capability_handle(1)
+            .region_bounds(0x1000, 0x2000)
+            .time_window(500, 1000)
+            .nonce(0)
+            .build();
+
+        // With allow_zero_nonce set, zero nonce passes repeatedly.
         assert!(evaluator.evaluate_all_rules(&ctx).is_ok());
         assert!(evaluator.evaluate_all_rules(&ctx).is_ok());
     }

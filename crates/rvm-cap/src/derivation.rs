@@ -23,6 +23,9 @@ pub struct DerivationNode {
     pub first_child: u32,
     /// Index of the next sibling (or `u32::MAX` if no sibling).
     pub next_sibling: u32,
+    /// Cached parent index for O(1) parent lookup.
+    /// `u32::MAX` means no parent (root node).
+    pub parent_index: u32,
 }
 
 impl DerivationNode {
@@ -36,6 +39,7 @@ impl DerivationNode {
             epoch: 0,
             first_child: u32::MAX,
             next_sibling: u32::MAX,
+            parent_index: u32::MAX,
         }
     }
 
@@ -49,6 +53,7 @@ impl DerivationNode {
             epoch,
             first_child: u32::MAX,
             next_sibling: u32::MAX,
+            parent_index: u32::MAX,
         }
     }
 
@@ -62,6 +67,7 @@ impl DerivationNode {
             epoch,
             first_child: u32::MAX,
             next_sibling: u32::MAX,
+            parent_index: u32::MAX,
         }
     }
 
@@ -155,6 +161,7 @@ impl<const N: usize> DerivationTree<N> {
         // Create child node and link to parent's child list (prepend).
         let mut child = DerivationNode::new_child(depth, epoch);
         child.next_sibling = self.nodes[pidx].first_child;
+        child.parent_index = parent_index;
         self.nodes[pidx].first_child = child_index;
         self.nodes[cidx] = child;
         self.count += 1;
@@ -261,8 +268,52 @@ impl<const N: usize> DerivationTree<N> {
         result
     }
 
-    /// Iteratively revokes a subtree using an explicit stack.
+    /// Find the parent of a given node.
     ///
+    /// Uses the cached `parent_index` field for O(1) lookup. Falls back
+    /// to O(N) scan if the cached index is stale (should not happen in
+    /// normal operation).
+    ///
+    /// Returns `None` for root nodes or if the parent is not found.
+    #[must_use]
+    pub fn find_parent(&self, child_index: u32) -> Option<u32> {
+        let cidx = child_index as usize;
+        if cidx >= N || !self.nodes[cidx].is_valid {
+            return None;
+        }
+        // Root nodes have no parent.
+        if self.nodes[cidx].depth == 0 {
+            return None;
+        }
+        // O(1) fast path via cached parent_index.
+        let pidx = self.nodes[cidx].parent_index;
+        if pidx != u32::MAX {
+            let pi = pidx as usize;
+            if pi < N && self.nodes[pi].is_valid {
+                return Some(pidx);
+            }
+        }
+        // Fallback: scan all nodes to find one whose child chain
+        // includes child_index (handles stale parent_index).
+        for i in 0..N {
+            if !self.nodes[i].is_valid {
+                continue;
+            }
+            let mut cursor = self.nodes[i].first_child;
+            while cursor != u32::MAX {
+                if cursor == child_index {
+                    return Some(i as u32);
+                }
+                let c = cursor as usize;
+                if c >= N {
+                    break;
+                }
+                cursor = self.nodes[c].next_sibling;
+            }
+        }
+        None
+    }
+
     /// # Security
     ///
     /// The previous recursive implementation could overflow the stack on

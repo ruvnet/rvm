@@ -20,9 +20,11 @@ rvm-partition = { workspace = true }
 rvm-witness = { workspace = true }
 rvm-sched = { workspace = true }
 rvm-memory = { workspace = true }
+sha2 = { workspace = true, optional = true }
+subtle = { workspace = true }
 
 [features]
-default = []
+default = ["crypto-sha256"]
 std = [
     "rvm-types/std",
     "rvm-hal/std",
@@ -39,3 +41,4 @@ alloc = [
     "rvm-sched/alloc",
     "rvm-memory/alloc",
 ]
+crypto-sha256 = ["sha2"]

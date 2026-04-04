@@ -44,6 +44,8 @@ impl CpuState {
 /// * `MAX_CPUS` -- maximum number of physical CPUs supported.
 pub struct SmpCoordinator<const MAX_CPUS: usize> {
     cpu_states: [CpuState; MAX_CPUS],
+    /// Maximum number of CPUs allowed to be brought online.
+    cpu_count: u16,
 }
 
 impl<const MAX_CPUS: usize> SmpCoordinator<MAX_CPUS> {
@@ -51,13 +53,19 @@ impl<const MAX_CPUS: usize> SmpCoordinator<MAX_CPUS> {
     ///
     /// `cpu_count` is clamped to `MAX_CPUS`.
     #[must_use]
-    pub fn new(_cpu_count: u8) -> Self {
+    pub fn new(cpu_count: u8) -> Self {
+        let clamped = if (cpu_count as usize) > MAX_CPUS {
+            MAX_CPUS as u16
+        } else {
+            cpu_count as u16
+        };
         let mut states = [CpuState::offline(0); MAX_CPUS];
         for i in 0..MAX_CPUS {
             states[i].cpu_id = i as u8;
         }
         Self {
             cpu_states: states,
+            cpu_count: clamped,
         }
     }
 
@@ -68,6 +76,9 @@ impl<const MAX_CPUS: usize> SmpCoordinator<MAX_CPUS> {
     /// * [`RvmError::ResourceLimitExceeded`] -- `cpu_id` is out of range.
     /// * [`RvmError::InvalidPartitionState`] -- CPU is already online.
     pub fn bring_online(&mut self, cpu_id: u8) -> RvmResult<()> {
+        if (cpu_id as u16) >= self.cpu_count {
+            return Err(RvmError::ResourceLimitExceeded);
+        }
         let state = self
             .get_state_mut(cpu_id)
             .ok_or(RvmError::ResourceLimitExceeded)?;
@@ -163,11 +174,11 @@ impl<const MAX_CPUS: usize> SmpCoordinator<MAX_CPUS> {
 
     /// Return the number of online CPUs.
     #[must_use]
-    pub fn active_count(&self) -> u8 {
+    pub fn active_count(&self) -> u16 {
         self.cpu_states
             .iter()
             .filter(|s| s.online)
-            .count() as u8
+            .count() as u16
     }
 
     /// Provide a rebalance hint: `(overloaded_cpu, idle_cpu)`.

@@ -133,6 +133,7 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::READ,
             proof_commitment: None,
+            current_epoch: None,
         };
         assert!(rvm_security::enforce(&request).is_ok());
 
@@ -142,6 +143,7 @@ mod tests {
             required_type: CapType::Region,
             required_rights: CapRights::READ,
             proof_commitment: None,
+            current_epoch: None,
         };
         assert!(rvm_security::enforce(&bad_request).is_err());
     }
@@ -310,6 +312,9 @@ mod tests {
             required_type: CapType::Region,
             required_rights: CapRights::WRITE,
             proof_commitment: Some(commitment),
+            require_p3: false,
+            p3_chain_valid: false,
+            p3_witness_data: None,
             action: ActionKind::RegionCreate,
             target_object_id: 100,
             timestamp_ns: 5000,
@@ -338,6 +343,9 @@ mod tests {
             required_type: CapType::Partition, // Wrong type.
             required_rights: CapRights::READ,
             proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
+            p3_witness_data: None,
             action: ActionKind::PartitionCreate,
             target_object_id: 1,
             timestamp_ns: 1000,
@@ -369,6 +377,9 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::WRITE,
             proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
+            p3_witness_data: None,
             action: ActionKind::PartitionCreate,
             target_object_id: 1,
             timestamp_ns: 1000,
@@ -397,6 +408,9 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::READ,
             proof_commitment: Some(WitnessHash::ZERO), // Zero = invalid.
+            require_p3: false,
+            p3_chain_valid: false,
+            p3_witness_data: None,
             action: ActionKind::PartitionCreate,
             target_object_id: 1,
             timestamp_ns: 1000,
@@ -685,8 +699,8 @@ mod tests {
 
         // Phase 3: Tick scheduler (simulate agent running).
         for i in 0..5 {
-            let summary = kernel.tick().unwrap();
-            assert_eq!(summary.epoch, i);
+            let result = kernel.tick().unwrap();
+            assert_eq!(result.summary.epoch, i);
         }
         assert_eq!(kernel.current_epoch(), 5);
 
@@ -957,6 +971,9 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::WRITE,
             proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
+            p3_witness_data: None,
             action: ActionKind::PartitionCreate,
             target_object_id: 42,
             timestamp_ns: 1000,
@@ -983,6 +1000,9 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::WRITE,
             proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
+            p3_witness_data: None,
             action: ActionKind::PartitionCreate,
             target_object_id: 42,
             timestamp_ns: 2000,
@@ -1003,6 +1023,9 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::WRITE,
             proof_commitment: Some(commitment),
+            require_p3: false,
+            p3_chain_valid: false,
+            p3_witness_data: None,
             action: ActionKind::PartitionCreate,
             target_object_id: 99,
             timestamp_ns: 3000,
@@ -1527,5 +1550,539 @@ mod tests {
         // p1 should have highest priority because its pressure boost is largest.
         // All have same deadline, so the one with highest pressure wins.
         assert_eq!(first, p1);
+    }
+
+    // ===============================================================
+    // ADR-142 TEE Pipeline Integration Tests
+    // ===============================================================
+
+    // ---------------------------------------------------------------
+    // ADR-142 A-02: Forged witness entry with reordered fields fails
+    //
+    // Create two WitnessRecords with identical data but different
+    // field ordering. With SHA-256 hashing (crypto-sha256 feature),
+    // the signed digests must differ, verifying that XOR
+    // commutativity (A-02) is fixed at the signing layer.
+    // ---------------------------------------------------------------
+    #[test]
+    fn adr142_forged_witness_reordered_fields_different_hashes() {
+        use rvm_witness::WitnessSigner as _;
+
+        let signer = rvm_witness::HmacWitnessSigner::new([0xAA; 32]);
+
+        // Record A: actor=1, target=2
+        let mut record_a = WitnessRecord::zeroed();
+        record_a.sequence = 1;
+        record_a.timestamp_ns = 1000;
+        record_a.action_kind = ActionKind::PartitionCreate as u8;
+        record_a.proof_tier = 2;
+        record_a.actor_partition_id = 1;
+        record_a.target_object_id = 2;
+        record_a.capability_hash = 0xABCD;
+
+        // Record B: swap actor and target fields to test commutativity.
+        let mut record_b = WitnessRecord::zeroed();
+        record_b.sequence = 1;
+        record_b.timestamp_ns = 1000;
+        record_b.action_kind = ActionKind::PartitionCreate as u8;
+        record_b.proof_tier = 2;
+        record_b.actor_partition_id = 2; // swapped
+        record_b.target_object_id = 1;   // swapped
+        record_b.capability_hash = 0xABCD;
+
+        // The HMAC signatures must differ because the signer hashes
+        // the serialized record in field order. Under a naive XOR
+        // scheme XOR(1,2) == XOR(2,1), but SHA-256/HMAC is order-
+        // sensitive.
+        let sig_a = signer.sign(&record_a);
+        let sig_b = signer.sign(&record_b);
+        assert_ne!(
+            sig_a, sig_b,
+            "XOR commutativity: swapped fields must produce different signatures (A-02)"
+        );
+
+        // Cross-verification must fail: signing record A, verifying
+        // against record B (with swapped fields).
+        record_a.aux = sig_a;
+        record_b.aux = sig_a; // forged: use A's signature on B
+        assert!(
+            signer.verify(&record_a),
+            "original record must verify"
+        );
+        assert!(
+            !signer.verify(&record_b),
+            "forged record with swapped fields must fail verification (A-02)"
+        );
+
+        // Also verify via compute_record_hash that byte order matters.
+        let hash_a = rvm_witness::compute_record_hash(&[
+            1, 0, 0, 0, // actor = 1
+            2, 0, 0, 0, // some field = 2
+        ]);
+        let hash_b = rvm_witness::compute_record_hash(&[
+            2, 0, 0, 0, // actor = 2 (swapped)
+            1, 0, 0, 0, // some field = 1 (swapped)
+        ]);
+        assert_ne!(hash_a, hash_b, "compute_record_hash must be order-sensitive (A-02)");
+    }
+
+    // ---------------------------------------------------------------
+    // ADR-142: Reused nonce is rejected
+    //
+    // Create a ProofEngine, submit a proof with nonce N, then submit
+    // again with same nonce N. The second should fail with replay
+    // detection. Also test nonce 0 is rejected by default.
+    // ---------------------------------------------------------------
+    #[test]
+    fn adr142_reused_nonce_rejected() {
+        use rvm_cap::CapabilityManager;
+        use rvm_types::{CapType, CapRights, ProofTier, ProofToken};
+        use rvm_proof::context::ProofContextBuilder;
+        use rvm_proof::engine::ProofEngine;
+
+        let witness_log = rvm_witness::WitnessLog::<32>::new();
+        let mut cap_mgr = CapabilityManager::<64>::with_defaults();
+        let owner = PartitionId::new(1);
+
+        let all_rights = CapRights::READ
+            .union(CapRights::WRITE)
+            .union(CapRights::PROVE);
+        let (idx, gen) = cap_mgr
+            .create_root_capability(CapType::Region, all_rights, 0, owner)
+            .unwrap();
+
+        let token = ProofToken {
+            tier: ProofTier::P2,
+            epoch: 0,
+            hash: 0xBEEF,
+        };
+
+        let context_n = ProofContextBuilder::new(owner)
+            .capability_handle(idx)
+            .capability_generation(gen)
+            .current_epoch(0)
+            .region_bounds(0x1000, 0x2000)
+            .time_window(500, 1000)
+            .nonce(42)
+            .build();
+
+        let mut engine = ProofEngine::<64>::new();
+
+        // First submission with nonce 42 should succeed.
+        assert!(
+            engine.verify_and_witness(&token, &context_n, &cap_mgr, &witness_log).is_ok(),
+            "first nonce=42 should succeed"
+        );
+
+        // Second submission with same nonce 42 should fail (replay).
+        assert!(
+            engine.verify_and_witness(&token, &context_n, &cap_mgr, &witness_log).is_err(),
+            "replayed nonce=42 must be rejected"
+        );
+
+        // Nonce 0 should be rejected by default (no zero-nonce bypass).
+        let context_zero = ProofContextBuilder::new(owner)
+            .capability_handle(idx)
+            .capability_generation(gen)
+            .current_epoch(0)
+            .region_bounds(0x1000, 0x2000)
+            .time_window(500, 1000)
+            .nonce(0)
+            .build();
+
+        assert!(
+            engine.verify_and_witness(&token, &context_zero, &cap_mgr, &witness_log).is_err(),
+            "nonce=0 must be rejected by default"
+        );
+
+        // A fresh nonce should still work.
+        let context_fresh = ProofContextBuilder::new(owner)
+            .capability_handle(idx)
+            .capability_generation(gen)
+            .current_epoch(0)
+            .region_bounds(0x1000, 0x2000)
+            .time_window(500, 1000)
+            .nonce(99)
+            .build();
+
+        assert!(
+            engine.verify_and_witness(&token, &context_fresh, &cap_mgr, &witness_log).is_ok(),
+            "fresh nonce=99 should succeed"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // ADR-142: Tampered witness chain detected via signed append
+    //
+    // Create a signed witness chain (4 entries). After signing,
+    // tamper with one entry's content. The signer's verify() should
+    // fail because the aux signature no longer matches the record
+    // data. Also verify chain-hash integrity detects prev_hash
+    // tampering.
+    // ---------------------------------------------------------------
+    #[test]
+    fn adr142_tampered_witness_chain_detected() {
+        use rvm_witness::WitnessSigner as _;
+
+        let log = rvm_witness::WitnessLog::<32>::new();
+        let signer = rvm_witness::HmacWitnessSigner::new([0xDD; 32]);
+
+        // Emit 4 signed records to build a signed chain.
+        for i in 0..4u8 {
+            let mut record = WitnessRecord::zeroed();
+            record.action_kind = ActionKind::PartitionCreate as u8;
+            record.proof_tier = 1;
+            record.actor_partition_id = i as u32;
+            record.target_object_id = (i as u64) * 100;
+            record.timestamp_ns = (i as u64) * 1000;
+            log.signed_append(record, &signer);
+        }
+
+        assert_eq!(log.total_emitted(), 4);
+
+        // Collect all records and verify signatures are valid.
+        let mut records = [WitnessRecord::zeroed(); 4];
+        for i in 0..4 {
+            records[i] = log.get(i).unwrap();
+            assert!(
+                signer.verify(&records[i]),
+                "untampered record {} must verify",
+                i
+            );
+        }
+
+        // Verify the untampered chain linkage is valid.
+        assert!(
+            rvm_witness::verify_chain(&records).is_ok(),
+            "untampered chain must verify"
+        );
+
+        // Tamper with entry 2's content but leave aux (signature) unchanged.
+        records[2].actor_partition_id = 0xFF; // changed content
+
+        // Signer verification must fail for the tampered record because
+        // the HMAC no longer matches the record data.
+        assert!(
+            !signer.verify(&records[2]),
+            "tampered record content must fail signer verification"
+        );
+
+        // The other records should still verify (localized detection).
+        assert!(signer.verify(&records[0]));
+        assert!(signer.verify(&records[1]));
+        assert!(signer.verify(&records[3]));
+
+        // Also verify that tampering with prev_hash breaks chain integrity.
+        let mut chain_records = [WitnessRecord::zeroed(); 4];
+        for i in 0..4 {
+            chain_records[i] = log.get(i).unwrap();
+        }
+        chain_records[2].prev_hash ^= 0xDEAD; // tamper chain link
+        assert!(
+            rvm_witness::verify_chain(&chain_records).is_err(),
+            "tampered prev_hash must break chain verification"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // ADR-142: Invalid P3 chain link (Merkle path) rejected
+    //
+    // Create a P3 witness chain where a sibling hash is wrong.
+    // The SecurityGate's verify_p3_chain should reject it.
+    // ---------------------------------------------------------------
+    #[test]
+    fn adr142_invalid_chain_link_rejected() {
+        use rvm_security::{SecurityGate, SecurityError, GateRequest, P3WitnessChain};
+
+        let log = rvm_witness::WitnessLog::<32>::new();
+        let gate = SecurityGate::new(&log);
+
+        // Build a 3-link chain where link[1].prev_hash != link[0].record_hash.
+        let mut chain = P3WitnessChain::empty();
+        chain.links[0] = [0, 0x1111];         // prev_hash=0, record_hash=0x1111
+        chain.links[1] = [0xDEAD, 0x2222];    // prev_hash=0xDEAD (WRONG! should be 0x1111)
+        chain.links[2] = [0x2222, 0x3333];    // prev_hash=0x2222 (correct relative to link[1])
+        chain.link_count = 3;
+
+        let token = CapToken::new(
+            1,
+            CapType::Partition,
+            CapRights::READ | CapRights::WRITE,
+            0,
+        );
+        let request = GateRequest {
+            token,
+            required_type: CapType::Partition,
+            required_rights: CapRights::READ,
+            proof_commitment: None,
+            require_p3: true,
+            p3_chain_valid: true, // advisory lies, gate ignores
+            p3_witness_data: Some(chain),
+            action: ActionKind::PartitionCreate,
+            target_object_id: 42,
+            timestamp_ns: 1000,
+        };
+
+        let err = gate.check_and_execute(&request).unwrap_err();
+        assert_eq!(
+            err,
+            SecurityError::DerivationChainBroken,
+            "broken chain link must be rejected as DerivationChainBroken"
+        );
+
+        // Also verify that a valid 3-link chain passes.
+        let mut valid_chain = P3WitnessChain::empty();
+        valid_chain.links[0] = [0, 0x1111];
+        valid_chain.links[1] = [0x1111, 0x2222]; // correct linkage
+        valid_chain.links[2] = [0x2222, 0x3333]; // correct linkage
+        valid_chain.link_count = 3;
+
+        let valid_request = GateRequest {
+            token,
+            required_type: CapType::Partition,
+            required_rights: CapRights::READ,
+            proof_commitment: None,
+            require_p3: true,
+            p3_chain_valid: false,
+            p3_witness_data: Some(valid_chain),
+            action: ActionKind::PartitionCreate,
+            target_object_id: 42,
+            timestamp_ns: 2000,
+        };
+
+        let response = gate.check_and_execute(&valid_request).unwrap();
+        assert_eq!(response.proof_tier, 3);
+    }
+
+    // ---------------------------------------------------------------
+    // ADR-142: Expired TEE collateral blocks signing
+    //
+    // Create SoftwareTeeProvider + SoftwareTeeVerifier, set verifier
+    // epoch past collateral expiry. TeeWitnessSigner::sign() should
+    // return zero signature (attestation fails).
+    // ---------------------------------------------------------------
+    #[test]
+    fn adr142_expired_tee_collateral_blocks_signing() {
+        use rvm_proof::signer::{HmacSha256WitnessSigner, WitnessSigner};
+        use rvm_proof::tee::TeePlatform;
+        use rvm_proof::{SoftwareTeeProvider, SoftwareTeeVerifier, TeeWitnessSigner};
+
+        let tee_key = [0xBB; 32];
+        let measurement = [0xAA; 32];
+        let hmac_key = [0xCC; 32];
+
+        let provider = SoftwareTeeProvider::new(TeePlatform::Sgx, measurement, tee_key);
+        // Verifier with collateral_expiry=100, current_epoch=200 => expired.
+        let verifier = SoftwareTeeVerifier::new(tee_key, 100, 200);
+        let hmac_signer = HmacSha256WitnessSigner::new(hmac_key);
+        let signer = TeeWitnessSigner::new(provider, verifier, hmac_signer, measurement);
+
+        let digest = [0x55; 32];
+        let sig = signer.sign(&digest);
+
+        // Self-attestation fails due to expired collateral, so zero signature.
+        assert_eq!(
+            sig, [0u8; 64],
+            "expired collateral must produce zero signature"
+        );
+
+        // Verify that a non-expired verifier works correctly.
+        let provider2 = SoftwareTeeProvider::new(TeePlatform::Sgx, measurement, tee_key);
+        let verifier2 = SoftwareTeeVerifier::new(tee_key, 0, 0); // no expiry
+        let hmac_signer2 = HmacSha256WitnessSigner::new(hmac_key);
+        let signer2 = TeeWitnessSigner::new(provider2, verifier2, hmac_signer2, measurement);
+
+        let sig2 = signer2.sign(&digest);
+        assert_ne!(
+            sig2, [0u8; 64],
+            "valid collateral must produce non-zero signature"
+        );
+        assert!(signer2.verify(&digest, &sig2).is_ok());
+    }
+
+    // ---------------------------------------------------------------
+    // ADR-142: Cross-partition key isolation
+    //
+    // Derive keys for partition 1 and partition 2 from same
+    // measurement. Keys must be different. Signing with partition 1's
+    // key, verifying with partition 2's key must fail.
+    // ---------------------------------------------------------------
+    #[test]
+    fn adr142_cross_partition_key_isolation() {
+        use rvm_proof::signer::{HmacSha256WitnessSigner, WitnessSigner};
+        use rvm_proof::{derive_witness_key, derive_key_bundle, dev_measurement};
+
+        let measurement = dev_measurement();
+
+        // Derive keys for two different partitions.
+        let key_p1 = derive_witness_key(&measurement, 1);
+        let key_p2 = derive_witness_key(&measurement, 2);
+
+        // Keys MUST be different for different partitions.
+        assert_ne!(
+            key_p1, key_p2,
+            "keys derived for different partitions must differ"
+        );
+
+        // Create signers from the derived keys.
+        let signer_p1 = HmacSha256WitnessSigner::new(key_p1);
+        let signer_p2 = HmacSha256WitnessSigner::new(key_p2);
+
+        // Signer IDs must also differ.
+        assert_ne!(signer_p1.signer_id(), signer_p2.signer_id());
+
+        // Sign with partition 1's key.
+        let digest = [0x77; 32];
+        let sig = signer_p1.sign(&digest);
+
+        // Verify with partition 1's key should succeed.
+        assert!(signer_p1.verify(&digest, &sig).is_ok());
+
+        // Verify with partition 2's key must fail (cross-partition isolation).
+        assert!(
+            signer_p2.verify(&digest, &sig).is_err(),
+            "cross-partition verification must fail"
+        );
+
+        // Also verify full key bundle isolation.
+        let bundle_p1 = derive_key_bundle(&measurement, 1);
+        let bundle_p2 = derive_key_bundle(&measurement, 2);
+
+        assert_ne!(bundle_p1.witness_key, bundle_p2.witness_key);
+        assert_ne!(bundle_p1.attestation_key, bundle_p2.attestation_key);
+        assert_ne!(bundle_p1.ipc_key, bundle_p2.ipc_key);
+
+        // All three keys within a bundle must also be distinct from each other.
+        assert_ne!(bundle_p1.witness_key, bundle_p1.attestation_key);
+        assert_ne!(bundle_p1.witness_key, bundle_p1.ipc_key);
+        assert_ne!(bundle_p1.attestation_key, bundle_p1.ipc_key);
+    }
+
+    // ---------------------------------------------------------------
+    // ADR-142: Full SecurityGate flow with signed witnesses
+    //
+    // Create a SignedSecurityGate with HmacWitnessSigner, execute a
+    // gate check that succeeds, verify the emitted witness record has
+    // a valid signature in aux field. Tamper with the witness and
+    // verify signature check fails.
+    // ---------------------------------------------------------------
+    #[test]
+    fn adr142_signed_security_gate_full_flow() {
+        use rvm_security::{SignedSecurityGate, GateRequest};
+        use rvm_witness::WitnessSigner as _;
+
+        let log = rvm_witness::WitnessLog::<32>::new();
+        let signer = rvm_witness::HmacWitnessSigner::new([0xDD; 32]);
+        let gate = SignedSecurityGate::new(&log, &signer);
+
+        let token = CapToken::new(
+            1,
+            CapType::Partition,
+            CapRights::READ | CapRights::WRITE,
+            0,
+        );
+
+        // Execute a gate check that should succeed.
+        let request = GateRequest {
+            token,
+            required_type: CapType::Partition,
+            required_rights: CapRights::READ,
+            proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
+            p3_witness_data: None,
+            action: ActionKind::PartitionCreate,
+            target_object_id: 42,
+            timestamp_ns: 1000,
+        };
+
+        let response = gate.check_and_execute(&request).unwrap();
+        assert_eq!(response.proof_tier, 1);
+        assert_eq!(response.witness_sequence, 0);
+
+        // Verify the emitted witness record has a non-zero signature.
+        let record = log.get(0).unwrap();
+        assert_ne!(
+            record.aux, [0u8; 8],
+            "signed gate must produce non-zero aux signature"
+        );
+
+        // Verify the signature is valid.
+        assert!(
+            signer.verify(&record),
+            "freshly signed witness record must verify"
+        );
+
+        // Tamper with the witness record and verify signature check fails.
+        let mut tampered = record;
+        tampered.target_object_id = 999; // changed content
+        assert!(
+            !signer.verify(&tampered),
+            "tampered witness record must fail signature verification"
+        );
+
+        // Also tamper with just the aux field (corrupt signature).
+        let mut sig_tampered = record;
+        sig_tampered.aux[0] ^= 0xFF;
+        assert!(
+            !signer.verify(&sig_tampered),
+            "corrupted aux signature must fail verification"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // ADR-142: Ed25519 signer round-trip (feature-gated)
+    //
+    // Create Ed25519WitnessSigner, sign a digest, verify it.
+    // Verify that verify_strict rejects a different digest.
+    // ---------------------------------------------------------------
+    #[cfg(feature = "ed25519")]
+    #[test]
+    fn adr142_ed25519_signer_round_trip() {
+        use rvm_proof::signer::{Ed25519WitnessSigner, WitnessSigner};
+
+        // Create an Ed25519 signer from a deterministic seed.
+        let seed = {
+            let mut s = [0u8; 32];
+            for (i, byte) in s.iter_mut().enumerate() {
+                #[allow(clippy::cast_possible_truncation)]
+                {
+                    *byte = (i as u8).wrapping_mul(0x5A).wrapping_add(0x13);
+                }
+            }
+            s
+        };
+
+        let signer = Ed25519WitnessSigner::from_seed(seed);
+
+        // Sign a digest.
+        let digest = [0xAA; 32];
+        let sig = signer.sign(&digest);
+
+        // Verify with the correct digest should succeed.
+        assert!(
+            signer.verify(&digest, &sig).is_ok(),
+            "Ed25519 round-trip must verify"
+        );
+
+        // Verify with a different digest should fail (verify_strict).
+        let wrong_digest = [0xBB; 32];
+        assert!(
+            signer.verify(&wrong_digest, &sig).is_err(),
+            "Ed25519 verify_strict must reject wrong digest"
+        );
+
+        // Tampered signature should also fail.
+        let mut tampered_sig = sig;
+        tampered_sig[0] ^= 0xFF;
+        assert!(
+            signer.verify(&digest, &tampered_sig).is_err(),
+            "Ed25519 verify_strict must reject tampered signature"
+        );
+
+        // Signer ID should be non-zero and deterministic.
+        let id = signer.signer_id();
+        assert_ne!(id, [0u8; 32]);
+        assert_eq!(id, signer.signer_id());
     }
 }

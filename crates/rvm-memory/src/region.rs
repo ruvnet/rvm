@@ -179,11 +179,18 @@ impl<const MAX: usize> RegionManager<MAX> {
             return Err(RvmError::ResourceLimitExceeded);
         }
 
-        // Check for guest-physical overlap with existing regions in the same partition.
+        // Combined single-pass: check for overlap AND find the first free slot.
         let new_start = config.guest_base.as_u64();
         let new_end = new_start + u64::from(config.page_count) * PAGE_SIZE as u64;
-        for region in &self.regions {
+        let new_host_start = config.host_base.as_u64();
+        let new_host_end = new_host_start + u64::from(config.page_count) * PAGE_SIZE as u64;
+        let mut first_free_slot: Option<usize> = None;
+
+        for (i, region) in self.regions.iter().enumerate() {
             if !region.occupied {
+                if first_free_slot.is_none() {
+                    first_free_slot = Some(i);
+                }
                 continue;
             }
             // Guest overlap check: only within the same partition.
@@ -197,8 +204,6 @@ impl<const MAX: usize> RegionManager<MAX> {
             // Host-physical overlap check: across ALL partitions.
             // Two partitions mapping the same host physical pages would
             // break isolation -- a partition could read/write another's memory.
-            let new_host_start = config.host_base.as_u64();
-            let new_host_end = new_host_start + u64::from(config.page_count) * PAGE_SIZE as u64;
             let existing_host_start = region.host_base.as_u64();
             let existing_host_end = region.host_end();
             if new_host_start < existing_host_end && existing_host_start < new_host_end {
@@ -206,10 +211,10 @@ impl<const MAX: usize> RegionManager<MAX> {
             }
         }
 
-        // Find an empty slot.
-        for slot in &mut self.regions {
-            if !slot.occupied {
-                *slot = OwnedRegion {
+        // Use the free slot found during the overlap scan.
+        match first_free_slot {
+            Some(idx) => {
+                self.regions[idx] = OwnedRegion {
                     id: config.id,
                     owner: config.owner,
                     guest_base: config.guest_base,
@@ -220,11 +225,10 @@ impl<const MAX: usize> RegionManager<MAX> {
                     occupied: true,
                 };
                 self.count += 1;
-                return Ok(config.id);
+                Ok(config.id)
             }
+            None => Err(RvmError::ResourceLimitExceeded),
         }
-
-        Err(RvmError::ResourceLimitExceeded)
     }
 
     /// Allocate a fresh `OwnedRegionId` and create the region.

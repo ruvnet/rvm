@@ -3,10 +3,16 @@
 use crate::partition::{Partition, PartitionType, MAX_PARTITIONS};
 use rvm_types::{PartitionId, RvmError, RvmResult};
 
+/// Maximum partition ID supported by the direct lookup index.
+const ID_INDEX_SIZE: usize = 4096;
+
 /// Manages the set of active partitions.
 #[derive(Debug)]
 pub struct PartitionManager {
     partitions: [Option<Partition>; MAX_PARTITIONS],
+    /// Direct lookup index: maps `PartitionId` value to slot index.
+    /// Enables O(1) lookup instead of O(N) linear scan.
+    id_to_slot: [Option<u8>; ID_INDEX_SIZE],
     count: usize,
     next_id: u32,
 }
@@ -17,6 +23,7 @@ impl PartitionManager {
     pub fn new() -> Self {
         Self {
             partitions: [None; MAX_PARTITIONS],
+            id_to_slot: [None; ID_INDEX_SIZE],
             count: 0,
             next_id: 1, // 0 is reserved for hypervisor
         }
@@ -39,24 +46,89 @@ impl PartitionManager {
         }
         let id = PartitionId::new(self.next_id);
         let partition = Partition::new(id, partition_type, vcpu_count, epoch);
-        for slot in &mut self.partitions {
+        for (i, slot) in self.partitions.iter_mut().enumerate() {
             if slot.is_none() {
                 *slot = Some(partition);
                 self.count += 1;
                 self.next_id += 1;
+                // Populate direct lookup index.
+                let id_val = id.as_u32() as usize;
+                if id_val < ID_INDEX_SIZE {
+                    self.id_to_slot[id_val] = Some(i as u8);
+                }
                 return Ok(id);
             }
         }
         Err(RvmError::InternalError)
     }
 
-    /// Look up a partition by ID.
+    /// Look up a partition by ID (O(1) via direct index).
     #[must_use]
     pub fn get(&self, id: PartitionId) -> Option<&Partition> {
+        let id_val = id.as_u32() as usize;
+        if id_val < ID_INDEX_SIZE {
+            if let Some(slot_idx) = self.id_to_slot[id_val] {
+                if let Some(ref p) = self.partitions[slot_idx as usize] {
+                    if p.id == id {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+        // Fallback: linear scan for IDs beyond index range.
         self.partitions
             .iter()
             .filter_map(|p| p.as_ref())
             .find(|p| p.id == id)
+    }
+
+    /// Mutable look-up of a partition by ID (O(1) via direct index).
+    pub fn get_mut(&mut self, id: PartitionId) -> Option<&mut Partition> {
+        let id_val = id.as_u32() as usize;
+        if id_val < ID_INDEX_SIZE {
+            if let Some(slot_idx) = self.id_to_slot[id_val] {
+                if self.partitions[slot_idx as usize]
+                    .as_ref()
+                    .is_some_and(|p| p.id == id)
+                {
+                    return self.partitions[slot_idx as usize].as_mut();
+                }
+            }
+        }
+        // Fallback: linear scan for IDs beyond index range.
+        self.partitions
+            .iter_mut()
+            .filter_map(|p| p.as_mut())
+            .find(|p| p.id == id)
+    }
+
+    /// Iterate over all active partition IDs.
+    pub fn active_ids(&self) -> impl Iterator<Item = PartitionId> + '_ {
+        self.partitions
+            .iter()
+            .filter_map(|p| p.as_ref().map(|p| p.id))
+    }
+
+    /// Remove a partition by ID, freeing its slot for reuse.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::PartitionNotFound`] if no partition with the given ID exists.
+    pub fn remove(&mut self, id: PartitionId) -> RvmResult<()> {
+        for slot in &mut self.partitions {
+            let matches = slot.as_ref().is_some_and(|p| p.id == id);
+            if matches {
+                *slot = None;
+                self.count -= 1;
+                // Clear direct lookup index.
+                let id_val = id.as_u32() as usize;
+                if id_val < ID_INDEX_SIZE {
+                    self.id_to_slot[id_val] = None;
+                }
+                return Ok(());
+            }
+        }
+        Err(RvmError::PartitionNotFound)
     }
 
     /// Return the number of active partitions.

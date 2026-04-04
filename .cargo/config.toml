@@ -1,0 +1,7 @@
+# Cargo configuration for RVM bare-metal AArch64 builds.
+#
+# The linker script path is relative to the workspace root (crates/rvm/)
+# because Cargo runs the linker from the workspace directory.
+
+[target.aarch64-unknown-none]
+rustflags = ["-C", "link-arg=-Trvm.ld"]

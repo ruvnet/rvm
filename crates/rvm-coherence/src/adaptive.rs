@@ -101,12 +101,12 @@ impl AdaptiveCoherenceEngine {
     /// Record that a coherence computation was performed this epoch.
     pub fn record_computation(&mut self) {
         self.last_compute_epoch = self.current_epoch;
-        self.compute_count += 1;
+        self.compute_count = self.compute_count.wrapping_add(1);
     }
 
     /// Record that a computation exceeded its time budget.
     pub fn record_budget_exceeded(&mut self) {
-        self.budget_exceeded_count += 1;
+        self.budget_exceeded_count = self.budget_exceeded_count.wrapping_add(1);
     }
 
     /// Compute the duty cycle: fraction of epochs that trigger recomputation.

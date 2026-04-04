@@ -17,7 +17,13 @@ use crate::graph::CoherenceGraph;
 pub const SPLIT_THRESHOLD_BP: u32 = 8_000;
 
 /// Merge coherence threshold: mutual coherence above this signals merge.
-pub const MERGE_COHERENCE_THRESHOLD_BP: u16 = 7_000;
+///
+/// Set to 4000 bp (40%). The maximum achievable mutual coherence for
+/// a pair of partitions that only communicate with each other is 5000 bp
+/// (50%), because mutual weight is counted once while each partition's
+/// total counts it in both directions. A threshold of 7000 (70%) was
+/// unreachable, preventing merge signals from ever firing.
+pub const MERGE_COHERENCE_THRESHOLD_BP: u16 = 4_000;
 
 /// Result of cut pressure analysis for a partition.
 #[derive(Debug, Clone, Copy)]
@@ -227,74 +233,57 @@ mod tests {
         // combined = 32000
         // mutual_weight = 16000
         // mutual_bp = 16000/32000 * 10000 = 5000
-        // 5000 < 7000, so should_merge = false
-        assert!(!signal.should_merge);
-
-        // Create scenario where merge DOES trigger
-        let mut g2 = CoherenceGraph::<8, 16>::new();
-        g2.add_node(pid(3)).unwrap();
-        g2.add_node(pid(4)).unwrap();
-        g2.add_node(pid(5)).unwrap();
-        // Heavy mutual between 3 and 4
-        g2.add_edge(pid(3), pid(4), 9000).unwrap();
-        g2.add_edge(pid(4), pid(3), 9000).unwrap();
-        // Light external from 3 to 5
-        g2.add_edge(pid(3), pid(5), 100).unwrap();
-
-        let signal2 = evaluate_merge(pid(3), pid(4), &g2);
-        // total_3 = 9000 + 100 (outgoing) + 9000 (incoming from 4) = 18100
-        // total_4 = 9000 (outgoing) + 9000 (incoming from 3) = 18000
-        // combined = 36100
-        // mutual = 18000
-        // bp = 18000/36100 * 10000 = 4986
-        // Still below 7000. To get above 7000 we'd need the mutual to be
-        // a very large fraction. Let's make a minimal graph:
-        let _ = signal2;
-
-        let mut g3 = CoherenceGraph::<8, 16>::new();
-        g3.add_node(pid(6)).unwrap();
-        g3.add_node(pid(7)).unwrap();
-        g3.add_edge(pid(6), pid(7), 1000).unwrap();
-        // Only one direction, so:
-        // total_6 = 1000 (out), total_7 = 1000 (in) => combined = 2000
-        // mutual = 1000, bp = 5000. Still not enough.
-
-        // The fundamental issue is mutual weight is always <= combined/2.
-        // So max mutual_bp = 5000 with equal bidirectional edges.
-        // To exceed 7000, we'd need the mutual weight to exceed 70% of combined,
-        // which is impossible when mutual is a subset of combined.
-        // Unless there are self-loops that inflate total for one side less.
-        // Actually mutual_weight counts edges between A and B (both directions),
-        // and combined counts ALL incident edges for A and B (including other
-        // neighbors). So if A and B only talk to each other, mutual_bp = 5000
-        // (each direction counted once in mutual and once in each total).
-        //
-        // To make merge trigger, we'd need a different definition or self-loops.
-        // Let's test that the threshold comparison works correctly with a lower
-        // threshold scenario.
-
-        // For now, verify the math is correct for the simple case.
-        let signal3 = evaluate_merge(pid(6), pid(7), &g3);
-        assert_eq!(signal3.mutual_coherence.as_basis_points(), 5000);
-        assert!(!signal3.should_merge);
+        // 5000 >= 4000 (threshold), so should_merge = true
+        assert!(signal.should_merge);
+        assert_eq!(signal.mutual_coherence.as_basis_points(), 5000);
     }
 
     #[test]
-    fn merge_signal_with_self_loops_enabling_merge() {
-        // When partitions have self-loops (internal work), the total is inflated,
-        // making mutual_bp lower. But if partition A has NO self-loop and NO
-        // other neighbors, and B likewise, then:
-        // total_A = edge(A->B) outgoing = W_ab
-        // total_B = edge(A->B) incoming = W_ab  (if only A->B exists)
-        // combined = 2 * W_ab
-        // mutual = W_ab
-        // bp = W_ab / (2 * W_ab) * 10000 = 5000
+    fn merge_signal_below_threshold() {
+        // Partitions that mostly talk to others, not each other.
+        let mut g = CoherenceGraph::<8, 16>::new();
+        g.add_node(pid(1)).unwrap();
+        g.add_node(pid(2)).unwrap();
+        g.add_node(pid(3)).unwrap();
+        // Light mutual between 1 and 2
+        g.add_edge(pid(1), pid(2), 100).unwrap();
+        // Heavy external from 1 to 3
+        g.add_edge(pid(1), pid(3), 9000).unwrap();
+        // Heavy external from 2 to 3
+        g.add_edge(pid(2), pid(3), 9000).unwrap();
 
-        // The max mutual_bp in a pure pair is exactly 5000.
-        // Merge threshold at 7000 requires external context or a different
-        // weighting scheme in production. For the v1 implementation, the
-        // threshold is configurable and the math is correct.
-        // We verify the computation is exact.
+        let signal = evaluate_merge(pid(1), pid(2), &g);
+        // total_1 = 100 + 9000 (outgoing) + 100 (incoming from 2) = 9200
+        // Wait -- edge(1->2)=100 means total_1 outgoing includes 100+9000=9100,
+        // and incoming to 1 includes edge(2->1) which does not exist, so
+        // total_1 = 9100 (only outgoing to 2 and 3, plus incoming from 2 if
+        // edge(2,1) exists). Since only edge(1,2) exists (not 2->1):
+        // total_1 = 100 + 9000 = 9100 (outgoing only, no incoming)
+        // total_2 = 9000 (outgoing to 3) + 100 (incoming from 1) = 9100
+        // combined = 18200
+        // mutual = 100  (only 1->2, no 2->1)
+        // bp = 100/18200 * 10000 = 54
+        // 54 < 4000, so should_merge = false
+        assert!(!signal.should_merge);
+    }
+
+    #[test]
+    fn merge_signal_unidirectional_at_max() {
+        // Unidirectional pair: max mutual_bp = 5000
+        let mut g = CoherenceGraph::<8, 16>::new();
+        g.add_node(pid(6)).unwrap();
+        g.add_node(pid(7)).unwrap();
+        g.add_edge(pid(6), pid(7), 1000).unwrap();
+        // total_6 = 1000 (out), total_7 = 1000 (in) => combined = 2000
+        // mutual = 1000, bp = 5000 >= 4000 => should_merge = true
+        let signal = evaluate_merge(pid(6), pid(7), &g);
+        assert_eq!(signal.mutual_coherence.as_basis_points(), 5000);
+        assert!(signal.should_merge);
+    }
+
+    #[test]
+    fn merge_signal_bidirectional_pair() {
+        // Bidirectional pair: mutual_bp = 5000 (max for pure pair).
         let mut g = CoherenceGraph::<4, 8>::new();
         g.add_node(PartitionId::new(1)).unwrap();
         g.add_node(PartitionId::new(2)).unwrap();
@@ -306,5 +295,7 @@ mod tests {
         // total_2 = 500 (out) + 500 (in) = 1000
         // combined = 2000, mutual = 1000
         assert_eq!(signal.mutual_coherence.as_basis_points(), 5000);
+        // 5000 >= 4000, merge should trigger
+        assert!(signal.should_merge);
     }
 }

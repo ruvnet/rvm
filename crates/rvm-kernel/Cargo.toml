@@ -13,6 +13,10 @@ categories = ["no-std", "embedded", "os"]
 [lib]
 crate-type = ["rlib"]
 
+[[bin]]
+name = "rvm"
+path = "src/main.rs"
+
 [dependencies]
 rvm-types = { workspace = true }
 rvm-hal = { workspace = true }
@@ -28,7 +32,8 @@ rvm-wasm = { workspace = true }
 rvm-security = { workspace = true }
 
 [features]
-default = []
+default = ["crypto-sha256"]
+crypto-sha256 = ["rvm-witness/crypto-sha256", "rvm-proof/crypto-sha256"]
 std = [
     "rvm-types/std",
     "rvm-hal/std",
