@@ -32,6 +32,10 @@ impl DmaBudget {
     /// Check whether a DMA transfer of the requested size is allowed.
     ///
     /// If allowed, the budget is updated. If not, returns an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the transfer would exceed the budget.
     pub fn check_dma(&mut self, requested_bytes: u64) -> RvmResult<()> {
         if requested_bytes == 0 {
             return Ok(());
@@ -53,11 +57,7 @@ impl DmaBudget {
     /// Return the remaining DMA budget in bytes.
     #[must_use]
     pub const fn remaining(&self) -> u64 {
-        if self.used_bytes >= self.max_bytes_per_epoch {
-            0
-        } else {
-            self.max_bytes_per_epoch - self.used_bytes
-        }
+        self.max_bytes_per_epoch.saturating_sub(self.used_bytes)
     }
 
     /// Reset the budget for a new epoch.
@@ -114,6 +114,10 @@ impl ResourceQuota {
     }
 
     /// Check whether CPU time budget allows the requested duration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the request would exceed the budget.
     pub fn check_cpu_time(&mut self, requested_ns: u64) -> RvmResult<()> {
         let new_total = self
             .cpu_time_used_ns
@@ -129,6 +133,10 @@ impl ResourceQuota {
     }
 
     /// Check whether memory budget allows the requested allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::OutOfMemory`] if the request would exceed the budget.
     pub fn check_memory(&mut self, requested_bytes: u64) -> RvmResult<()> {
         let new_total = self
             .memory_used_bytes
@@ -144,6 +152,10 @@ impl ResourceQuota {
     }
 
     /// Check whether the IPC rate allows another message.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the IPC rate limit is reached.
     pub fn check_ipc(&mut self) -> RvmResult<()> {
         if self.ipc_used >= self.ipc_rate {
             return Err(RvmError::ResourceLimitExceeded);

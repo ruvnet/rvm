@@ -20,7 +20,7 @@
 //! 1. A partition can only grant capabilities it holds
 //! 2. Granted rights must be equal or fewer than held rights
 //! 3. Revocation propagates through the derivation tree
-//! 4. GRANT_ONCE provides non-transitive delegation
+//! 4. `GRANT_ONCE` provides non-transitive delegation
 //! 5. Epoch-based invalidation detects stale handles
 
 #![no_std]
@@ -47,7 +47,7 @@ pub use derivation::{DerivationNode, DerivationTree};
 pub use error::{CapError, CapResult, ProofError};
 pub use grant::GrantPolicy;
 pub use manager::{CapManagerConfig, CapabilityManager, ManagerStats};
-pub use revoke::RevokeResult;
+pub use revoke::{RevokeResult, revoke_single};
 pub use table::{CapSlot, CapabilityTable};
 pub use verify::ProofVerifier;
 

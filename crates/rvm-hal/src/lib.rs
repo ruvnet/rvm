@@ -1,7 +1,7 @@
 //! # RVM Hardware Abstraction Layer
 //!
 //! Platform-agnostic traits for the RVM microhypervisor, as specified in
-//! ADR-133. Concrete implementations are provided per target (AArch64,
+//! ADR-133. Concrete implementations are provided per target (`AArch64`,
 //! RISC-V, x86-64).
 //!
 //! ## Subsystems
@@ -46,15 +46,31 @@ pub trait Platform {
 /// Stage-2 MMU operations for guest physical to host physical translation.
 pub trait MmuOps {
     /// Map a guest physical page to a host physical page.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the mapping cannot be established.
     fn map_page(&mut self, guest: GuestPhysAddr, host: PhysAddr) -> RvmResult<()>;
 
     /// Unmap a guest physical page.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the page is not currently mapped.
     fn unmap_page(&mut self, guest: GuestPhysAddr) -> RvmResult<()>;
 
     /// Translate a guest physical address to a host physical address.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the address is not mapped.
     fn translate(&self, guest: GuestPhysAddr) -> RvmResult<PhysAddr>;
 
     /// Flush TLB entries for the given guest address range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the flush operation fails.
     fn flush_tlb(&mut self, guest: GuestPhysAddr, page_count: usize) -> RvmResult<()>;
 }
 
@@ -64,18 +80,34 @@ pub trait TimerOps {
     fn now_ns(&self) -> u64;
 
     /// Set a one-shot timer deadline in nanoseconds from now.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the deadline cannot be set.
     fn set_deadline_ns(&mut self, ns_from_now: u64) -> RvmResult<()>;
 
     /// Cancel the current deadline.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no deadline is currently set.
     fn cancel_deadline(&mut self) -> RvmResult<()>;
 }
 
 /// Interrupt controller operations.
 pub trait InterruptOps {
     /// Enable the interrupt with the given ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the interrupt ID is invalid.
     fn enable(&mut self, irq: u32) -> RvmResult<()>;
 
     /// Disable the interrupt with the given ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the interrupt ID is invalid.
     fn disable(&mut self, irq: u32) -> RvmResult<()>;
 
     /// Acknowledge the interrupt and return its ID, or `None` if spurious.

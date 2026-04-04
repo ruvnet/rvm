@@ -133,14 +133,34 @@ pub fn validate_region(region: &MemoryRegion) -> RvmResult<()> {
 }
 
 /// Check whether two memory regions overlap in guest physical space.
+///
+/// Guest-physical overlap is only meaningful within the same partition
+/// (each partition has its own stage-2 page table). However, host-physical
+/// overlap across partitions would break isolation, so callers should also
+/// check `regions_overlap_host` for cross-partition safety.
 #[must_use]
 pub fn regions_overlap(a: &MemoryRegion, b: &MemoryRegion) -> bool {
     if a.owner != b.owner {
-        return false; // Different partitions cannot overlap.
+        return false; // Different partitions have separate guest address spaces.
     }
     let a_start = a.guest_base.as_u64();
     let a_end = a_start + (a.page_count as u64 * PAGE_SIZE as u64);
     let b_start = b.guest_base.as_u64();
+    let b_end = b_start + (b.page_count as u64 * PAGE_SIZE as u64);
+
+    a_start < b_end && b_start < a_end
+}
+
+/// Check whether two memory regions overlap in host physical space.
+///
+/// This is a critical isolation check: two partitions must NEVER map
+/// the same host physical pages unless explicitly sharing via a
+/// controlled mechanism (e.g., `RegionShare` with read-only attenuation).
+#[must_use]
+pub fn regions_overlap_host(a: &MemoryRegion, b: &MemoryRegion) -> bool {
+    let a_start = a.host_base.as_u64();
+    let a_end = a_start + (a.page_count as u64 * PAGE_SIZE as u64);
+    let b_start = b.host_base.as_u64();
     let b_end = b_start + (b.page_count as u64 * PAGE_SIZE as u64);
 
     a_start < b_end && b_start < a_end

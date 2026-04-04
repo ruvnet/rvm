@@ -16,6 +16,7 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
     }
 
     /// Emits a partition creation witness.
+    #[must_use]
     pub fn emit_partition_create(
         &self, actor: u32, new_partition_id: u64, cap_hash: u32, ts: u64,
     ) -> u64 {
@@ -30,6 +31,7 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
     }
 
     /// Emits a partition destroy witness.
+    #[must_use]
     pub fn emit_partition_destroy(
         &self, actor: u32, partition_id: u64, cap_hash: u32, ts: u64,
     ) -> u64 {
@@ -44,6 +46,7 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
     }
 
     /// Emits a capability grant witness.
+    #[must_use]
     pub fn emit_capability_grant(
         &self, actor: u32, target: u64, cap_hash: u32, payload: [u8; 8], ts: u64,
     ) -> u64 {
@@ -59,6 +62,7 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
     }
 
     /// Emits a capability revoke witness.
+    #[must_use]
     pub fn emit_capability_revoke(
         &self, actor: u32, target: u64, cap_hash: u32, ts: u64,
     ) -> u64 {
@@ -73,6 +77,7 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
     }
 
     /// Emits a memory region map witness.
+    #[must_use]
     pub fn emit_memory_map(
         &self, actor: u32, region_id: u64, cap_hash: u32, payload: [u8; 8], ts: u64,
     ) -> u64 {
@@ -88,6 +93,7 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
     }
 
     /// Emits a proof rejection witness.
+    #[must_use]
     pub fn emit_proof_rejected(
         &self, actor: u32, target: u64, cap_hash: u32, ts: u64,
     ) -> u64 {

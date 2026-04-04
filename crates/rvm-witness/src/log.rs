@@ -21,6 +21,10 @@ struct WitnessLogInner<const N: usize> {
 
 impl<const N: usize> WitnessLog<N> {
     /// Creates a new empty witness log.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `N` is zero.
     #[must_use]
     pub fn new() -> Self {
         assert!(N > 0, "witness log capacity must be > 0");
@@ -67,8 +71,10 @@ impl<const N: usize> WitnessLog<N> {
     }
 
     /// Returns the number of records currently in the buffer.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn len(&self) -> usize {
         let total = self.inner.lock().total_emitted;
+        // Safe: if total < N then total fits in usize since N is usize.
         if total >= N as u64 { N } else { total as usize }
     }
 
@@ -92,9 +98,11 @@ impl<const N: usize> WitnessLog<N> {
     /// Copies the most recent records into the buffer. Returns count copied.
     pub fn snapshot(&self, buf: &mut [WitnessRecord]) -> usize {
         let inner = self.inner.lock();
+        #[allow(clippy::cast_possible_truncation)]
         let available = if inner.total_emitted >= N as u64 {
             N
         } else {
+            // Safe: total_emitted < N and N is usize, so it fits.
             inner.total_emitted as usize
         };
         let to_copy = buf.len().min(available);
@@ -106,9 +114,9 @@ impl<const N: usize> WitnessLog<N> {
         } else {
             0
         };
-        for i in 0..to_copy {
+        for (i, slot) in buf.iter_mut().enumerate().take(to_copy) {
             let idx = (start + (available - to_copy) + i) % N;
-            buf[i] = inner.records[idx];
+            *slot = inner.records[idx];
         }
         to_copy
     }

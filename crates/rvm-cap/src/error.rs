@@ -27,7 +27,7 @@ pub enum CapError {
     TreeFull,
     /// Capability type mismatch.
     TypeMismatch,
-    /// The capability has been consumed (GRANT_ONCE).
+    /// The capability has been consumed (`GRANT_ONCE`).
     Consumed,
 }
 
@@ -51,14 +51,12 @@ impl fmt::Display for CapError {
 impl From<CapError> for RvmError {
     fn from(e: CapError) -> Self {
         match e {
-            CapError::InvalidHandle => RvmError::InsufficientCapability,
-            CapError::StaleHandle => RvmError::StaleCapability,
-            CapError::TableFull => RvmError::ResourceLimitExceeded,
-            CapError::Revoked => RvmError::StaleCapability,
+            CapError::InvalidHandle
+            | CapError::GrantNotPermitted
+            | CapError::RightsEscalation => RvmError::InsufficientCapability,
+            CapError::StaleHandle | CapError::Revoked => RvmError::StaleCapability,
+            CapError::TableFull | CapError::TreeFull => RvmError::ResourceLimitExceeded,
             CapError::DelegationDepthExceeded => RvmError::DelegationDepthExceeded,
-            CapError::GrantNotPermitted => RvmError::InsufficientCapability,
-            CapError::RightsEscalation => RvmError::InsufficientCapability,
-            CapError::TreeFull => RvmError::ResourceLimitExceeded,
             CapError::TypeMismatch => RvmError::CapabilityTypeMismatch,
             CapError::Consumed => RvmError::CapabilityConsumed,
         }
@@ -101,9 +99,9 @@ impl fmt::Display for ProofError {
 impl From<ProofError> for RvmError {
     fn from(e: ProofError) -> Self {
         match e {
-            ProofError::InvalidHandle => RvmError::InsufficientCapability,
+            ProofError::InvalidHandle
+            | ProofError::InsufficientRights => RvmError::InsufficientCapability,
             ProofError::StaleCapability => RvmError::StaleCapability,
-            ProofError::InsufficientRights => RvmError::InsufficientCapability,
             ProofError::PolicyViolation => RvmError::ProofInvalid,
             ProofError::P3NotImplemented => RvmError::Unsupported,
         }

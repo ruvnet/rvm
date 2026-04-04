@@ -48,6 +48,7 @@ pub struct AttestationChain {
 impl AttestationChain {
     /// Create a new, empty attestation chain.
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub const fn new() -> Self {
         Self {
             entries: [AttestationEntry::zeroed(); MAX_ATTESTATION_ENTRIES],
@@ -71,6 +72,7 @@ impl AttestationChain {
     }
 
     /// Internal: add an entry with the given source tag.
+    #[allow(clippy::cast_possible_truncation)]
     fn add_entry(&mut self, hash: [u8; 32], source_tag: u8) -> bool {
         if self.count >= MAX_ATTESTATION_ENTRIES {
             return false;
@@ -120,6 +122,7 @@ impl AttestationChain {
 
     /// Generate an attestation report from the current chain state.
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn generate_attestation_report(&self) -> AttestationReport {
         AttestationReport {
             entry_count: self.count as u32,
@@ -149,6 +152,12 @@ impl AttestationChain {
             }
         }
         count
+    }
+}
+
+impl Default for AttestationChain {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

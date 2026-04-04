@@ -194,18 +194,35 @@ impl<const MAX: usize> AgentManager<MAX> {
     }
 
     /// Terminate an agent and free its slot.
+    ///
+    /// The slot is set to `None` so it can be reused by future spawns.
+    /// Without this, terminated agents permanently occupy slots and
+    /// eventually exhaust the agent capacity (resource exhaustion).
     pub fn terminate<const W: usize>(
         &mut self,
         id: AgentId,
         witness_log: &WitnessLog<W>,
     ) -> RvmResult<()> {
-        let agent = self.get_mut(id)?;
-        if agent.state == AgentState::Terminated {
-            return Err(RvmError::InvalidPartitionState);
+        // Find the slot and extract the info we need before clearing it.
+        let mut found = false;
+        let mut partition_id = PartitionId::new(0);
+        for slot in self.agents.iter_mut() {
+            if let Some(ref agent) = slot {
+                if agent.id == id && agent.state != AgentState::Terminated {
+                    if agent.state == AgentState::Terminated {
+                        return Err(RvmError::InvalidPartitionState);
+                    }
+                    partition_id = agent.partition_id;
+                    *slot = None; // Free the slot for reuse.
+                    self.count = self.count.saturating_sub(1);
+                    found = true;
+                    break;
+                }
+            }
         }
-        let partition_id = agent.partition_id;
-        agent.state = AgentState::Terminated;
-        self.count = self.count.saturating_sub(1);
+        if !found {
+            return Err(RvmError::PartitionNotFound);
+        }
         emit_agent_witness(witness_log, ActionKind::TaskTerminate, partition_id, id);
         Ok(())
     }

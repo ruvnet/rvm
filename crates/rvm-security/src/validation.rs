@@ -15,6 +15,11 @@ const PAGE_SIZE: u64 = 4096;
 /// Validate that a partition ID is within the allowed range.
 ///
 /// Partition 0 is reserved for the hypervisor. Valid IDs are `1..=4096`.
+///
+/// # Errors
+///
+/// Returns [`RvmError::InvalidPartitionState`] if `id` is zero.
+/// Returns [`RvmError::PartitionLimitExceeded`] if `id` exceeds 4096.
 pub fn validate_partition_id(id: u32) -> RvmResult<()> {
     if id == 0 {
         return Err(RvmError::InvalidPartitionState);
@@ -30,6 +35,11 @@ pub fn validate_partition_id(id: u32) -> RvmResult<()> {
 ///
 /// Both `addr` and `size` must be page-aligned (4 KiB boundary), and
 /// `addr + size` must not overflow `u64`.
+///
+/// # Errors
+///
+/// Returns [`RvmError::AlignmentError`] if addresses are unaligned or size is zero.
+/// Returns [`RvmError::MemoryOverlap`] if `addr + size` overflows.
 pub fn validate_region_bounds(addr: u64, size: u64) -> RvmResult<()> {
     // Size must be non-zero
     if size == 0 {
@@ -57,6 +67,10 @@ pub fn validate_region_bounds(addr: u64, size: u64) -> RvmResult<()> {
 ///
 /// A caller may only exercise rights they possess. This is the
 /// foundational capability check before any operation proceeds.
+///
+/// # Errors
+///
+/// Returns [`RvmError::InsufficientCapability`] if `requested` is not a subset of `held`.
 pub fn validate_capability_rights(requested: CapRights, held: CapRights) -> RvmResult<()> {
     if held.contains(requested) {
         Ok(())
@@ -70,6 +84,10 @@ pub fn validate_capability_rights(requested: CapRights, held: CapRights) -> RvmR
 /// `lease_expiry_epoch` is the epoch at which the lease expires.
 /// `current_epoch` is the current system epoch. The lease is valid
 /// if `current_epoch < lease_expiry_epoch`.
+///
+/// # Errors
+///
+/// Returns [`RvmError::DeviceLeaseExpired`] if the lease has expired.
 pub fn validate_lease_expiry(lease_expiry_epoch: u32, current_epoch: u32) -> RvmResult<()> {
     if current_epoch >= lease_expiry_epoch {
         Err(RvmError::DeviceLeaseExpired)

@@ -47,7 +47,7 @@ pub use cap_table::CapabilityTable;
 pub use comm_edge::{CommEdge, CommEdgeId};
 pub use lifecycle::valid_transition;
 pub use manager::PartitionManager;
-pub use merge::{merge_preconditions_met, MergePreconditionError};
+pub use merge::{merge_preconditions_met, merge_preconditions_full, MergePreconditionError};
 pub use ops::{PartitionConfig, PartitionOps, SplitConfig};
 pub use partition::{
     CutPressureLocal, Partition, PartitionState, PartitionType, MAX_PARTITIONS,

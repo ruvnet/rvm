@@ -78,6 +78,7 @@ pub struct PolicyRequest<'a> {
 ///
 /// For the full gate pipeline with automatic witness logging, use
 /// [`SecurityGate::check_and_execute`] instead.
+#[must_use]
 pub fn evaluate(request: &PolicyRequest<'_>) -> PolicyDecision {
     // Stage 1: Capability type check.
     if request.token.cap_type() != request.required_type {
@@ -102,6 +103,10 @@ pub fn evaluate(request: &PolicyRequest<'_>) -> PolicyDecision {
 }
 
 /// Convenience function: evaluate and return `RvmResult<()>`.
+///
+/// # Errors
+///
+/// Returns the [`RvmError`] from the policy decision if the operation is denied.
 pub fn enforce(request: &PolicyRequest<'_>) -> RvmResult<()> {
     match evaluate(request) {
         PolicyDecision::Allow => Ok(()),

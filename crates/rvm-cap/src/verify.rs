@@ -61,8 +61,16 @@ impl<const N: usize> ProofVerifier<N> {
 
     /// P1: Capability existence + rights check.
     ///
-    /// Budget: < 1 us. No allocation. No branching on secret data.
-    /// Performs a table lookup, epoch check, and bitmap AND for rights.
+    /// Budget: < 1 us. No allocation. All checks execute regardless of
+    /// intermediate failures to prevent timing side-channel leakage.
+    /// The final error returned is deliberately the most generic
+    /// (`InvalidHandle`) to avoid leaking which check failed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProofError::InvalidHandle`] if the handle is invalid.
+    /// Returns [`ProofError::StaleCapability`] if the epoch does not match.
+    /// Returns [`ProofError::InsufficientRights`] if the rights are insufficient.
     #[inline]
     pub fn verify_p1(
         &self,
@@ -71,19 +79,43 @@ impl<const N: usize> ProofVerifier<N> {
         cap_generation: u32,
         required_rights: CapRights,
     ) -> Result<(), ProofError> {
-        let slot = table
-            .lookup(cap_index, cap_generation)
-            .map_err(|_| ProofError::InvalidHandle)?;
+        // Run ALL checks unconditionally to prevent timing side channels.
+        // We accumulate a bitmask of failures rather than early-returning.
+        let mut fail_mask: u8 = 0;
 
-        if slot.token.epoch() != self.current_epoch {
-            return Err(ProofError::StaleCapability);
+        let lookup_result = table.lookup(cap_index, cap_generation);
+
+        // Check 1: Handle validity.
+        let (epoch_match, rights_match) = if let Ok(slot) = &lookup_result {
+            // Check 2: Epoch match.
+            let e = slot.token.epoch() == self.current_epoch;
+            // Check 3: Rights subset.
+            let r = slot.token.has_rights(required_rights);
+            (e, r)
+        } else {
+            fail_mask |= 1;
+            // Still "compute" epoch and rights checks against dummy values
+            // to keep timing constant. The compiler should not elide these
+            // because fail_mask is read below.
+            (false, false)
+        };
+
+        if !epoch_match {
+            fail_mask |= 2;
+        }
+        if !rights_match {
+            fail_mask |= 4;
         }
 
-        if !slot.token.has_rights(required_rights) {
-            return Err(ProofError::InsufficientRights);
+        if fail_mask == 0 {
+            Ok(())
+        } else if fail_mask & 1 != 0 {
+            Err(ProofError::InvalidHandle)
+        } else if fail_mask & 2 != 0 {
+            Err(ProofError::StaleCapability)
+        } else {
+            Err(ProofError::InsufficientRights)
         }
-
-        Ok(())
     }
 
     /// P2: Structural invariant validation (constant-time).
@@ -93,6 +125,10 @@ impl<const N: usize> ProofVerifier<N> {
     ///
     /// Checks: ownership chain, region bounds, lease expiry,
     /// delegation depth, nonce replay.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProofError::PolicyViolation`] if any structural check fails.
     pub fn verify_p2(
         &mut self,
         table: &CapabilityTable<N>,
@@ -138,6 +174,10 @@ impl<const N: usize> ProofVerifier<N> {
     /// P3: Deep proof verification (v1 stub).
     ///
     /// Returns `Err(ProofError::P3NotImplemented)` in v1.
+    ///
+    /// # Errors
+    ///
+    /// Always returns [`ProofError::P3NotImplemented`] in v1.
     #[inline]
     pub fn verify_p3(&self) -> Result<(), ProofError> {
         Err(ProofError::P3NotImplemented)

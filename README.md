@@ -26,7 +26,7 @@ structure.
 ```
 Agent swarm → [RVM Coherence Engine] → Optimal Placement → Witness Proof
                     ↑                                            │
-                    └──── Agent Communication Graph ────────────┘
+                    └──── Agent Communication Graph ─────────────┘
                           (< 50µs adaptive re-partitioning)
 ```
 

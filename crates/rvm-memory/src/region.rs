@@ -179,16 +179,29 @@ impl<const MAX: usize> RegionManager<MAX> {
             return Err(RvmError::ResourceLimitExceeded);
         }
 
-        // Check for overlap with existing regions in the same partition.
+        // Check for guest-physical overlap with existing regions in the same partition.
         let new_start = config.guest_base.as_u64();
         let new_end = new_start + u64::from(config.page_count) * PAGE_SIZE as u64;
         for region in &self.regions {
-            if !region.occupied || region.owner != config.owner {
+            if !region.occupied {
                 continue;
             }
-            let existing_start = region.guest_base.as_u64();
-            let existing_end = region.guest_end();
-            if new_start < existing_end && existing_start < new_end {
+            // Guest overlap check: only within the same partition.
+            if region.owner == config.owner {
+                let existing_start = region.guest_base.as_u64();
+                let existing_end = region.guest_end();
+                if new_start < existing_end && existing_start < new_end {
+                    return Err(RvmError::MemoryOverlap);
+                }
+            }
+            // Host-physical overlap check: across ALL partitions.
+            // Two partitions mapping the same host physical pages would
+            // break isolation -- a partition could read/write another's memory.
+            let new_host_start = config.host_base.as_u64();
+            let new_host_end = new_host_start + u64::from(config.page_count) * PAGE_SIZE as u64;
+            let existing_host_start = region.host_base.as_u64();
+            let existing_host_end = region.host_end();
+            if new_host_start < existing_host_end && existing_host_start < new_host_end {
                 return Err(RvmError::MemoryOverlap);
             }
         }
@@ -476,10 +489,21 @@ mod tests {
     #[test]
     fn no_overlap_different_partitions() {
         let mut mgr = RegionManager::<8>::new();
-        // Same guest range but different owners -- no overlap.
+        // Same guest range but different owners AND different host ranges -- no overlap.
         mgr.create(default_config(1, 1, 0x1000, 0x1_0000)).unwrap();
         mgr.create(default_config(2, 2, 0x1000, 0x2_0000)).unwrap();
         assert_eq!(mgr.count(), 2);
+    }
+
+    #[test]
+    fn host_overlap_cross_partition_rejected() {
+        let mut mgr = RegionManager::<8>::new();
+        // Different owners but SAME host physical range -- must be rejected.
+        mgr.create(default_config(1, 1, 0x1000, 0x10_0000)).unwrap();
+        assert_eq!(
+            mgr.create(default_config(2, 2, 0x5000, 0x10_0000)),
+            Err(RvmError::MemoryOverlap)
+        );
     }
 
     #[test]

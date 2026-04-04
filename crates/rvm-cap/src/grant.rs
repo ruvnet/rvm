@@ -15,7 +15,7 @@ use rvm_types::{CapRights, CapToken};
 pub struct GrantPolicy {
     /// Maximum delegation depth allowed.
     pub max_depth: u8,
-    /// Whether GRANT_ONCE capabilities are allowed.
+    /// Whether `GRANT_ONCE` capabilities are allowed.
     pub allow_grant_once: bool,
 }
 
@@ -54,7 +54,7 @@ pub fn validate_grant(
     new_id: u64,
     badge: u64,
     epoch: u32,
-    policy: &GrantPolicy,
+    policy: GrantPolicy,
 ) -> CapResult<(CapToken, u8)> {
     let source_rights = source.token.rights();
 
@@ -115,7 +115,7 @@ mod tests {
     fn test_valid_grant() {
         let source = make_source(all_rights(), 0);
         let policy = GrantPolicy::new();
-        let (token, depth) = validate_grant(&source, CapRights::READ, 10, 42, 0, &policy).unwrap();
+        let (token, depth) = validate_grant(&source, CapRights::READ, 10, 42, 0, policy).unwrap();
         assert_eq!(token.rights(), CapRights::READ);
         assert_eq!(depth, 1);
     }
@@ -124,7 +124,7 @@ mod tests {
     fn test_grant_without_grant_right() {
         let source = make_source(CapRights::READ, 0);
         let policy = GrantPolicy::new();
-        let result = validate_grant(&source, CapRights::READ, 10, 0, 0, &policy);
+        let result = validate_grant(&source, CapRights::READ, 10, 0, 0, policy);
         assert_eq!(result, Err(CapError::GrantNotPermitted));
     }
 
@@ -132,7 +132,7 @@ mod tests {
     fn test_rights_escalation() {
         let source = make_source(CapRights::READ.union(CapRights::GRANT), 0);
         let policy = GrantPolicy::new();
-        let result = validate_grant(&source, CapRights::WRITE, 10, 0, 0, &policy);
+        let result = validate_grant(&source, CapRights::WRITE, 10, 0, 0, policy);
         assert_eq!(result, Err(CapError::RightsEscalation));
     }
 
@@ -140,7 +140,7 @@ mod tests {
     fn test_depth_limit() {
         let source = make_source(all_rights(), 8);
         let policy = GrantPolicy::new();
-        let result = validate_grant(&source, CapRights::READ, 10, 0, 0, &policy);
+        let result = validate_grant(&source, CapRights::READ, 10, 0, 0, policy);
         assert_eq!(result, Err(CapError::DelegationDepthExceeded));
     }
 
@@ -156,7 +156,7 @@ mod tests {
             badge: 0,
         };
         let policy = GrantPolicy::new();
-        let (token, _) = validate_grant(&source, CapRights::READ, 10, 0, 5, &policy).unwrap();
+        let (token, _) = validate_grant(&source, CapRights::READ, 10, 0, 5, policy).unwrap();
         assert_eq!(token.cap_type(), CapType::CommEdge);
         assert_eq!(token.epoch(), 5);
     }
@@ -165,7 +165,7 @@ mod tests {
     fn test_grant_at_max_minus_one() {
         let source = make_source(all_rights(), 7);
         let policy = GrantPolicy::new();
-        let (_, depth) = validate_grant(&source, CapRights::READ, 10, 0, 0, &policy).unwrap();
+        let (_, depth) = validate_grant(&source, CapRights::READ, 10, 0, 0, policy).unwrap();
         assert_eq!(depth, 8);
     }
 }

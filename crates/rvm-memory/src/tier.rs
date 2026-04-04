@@ -695,4 +695,196 @@ mod tests {
         mgr.update_cut_value(rid(1), 50_000).unwrap();
         assert_eq!(mgr.get(rid(1)).unwrap().cut_value, 10_000);
     }
+
+    // ---------------------------------------------------------------
+    // DC-1 static fallback: coherence-absent behavior
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn dc1_fallback_cut_value_stays_zero_without_coherence() {
+        // When the coherence engine is absent, cut_value defaults to 0.
+        // Only recency_score drives tier placement.
+        let mut mgr = TierManager::<4>::new();
+        mgr.register(rid(1), Tier::Warm).unwrap();
+
+        let state = mgr.get(rid(1)).unwrap();
+        assert_eq!(state.cut_value, 0);
+        // Residency score = 0 + 5_000 = 5_000.
+        assert_eq!(state.residency_score(), 5_000);
+    }
+
+    #[test]
+    fn dc1_fallback_promotion_blocked_by_low_recency() {
+        // Without coherence engine, warm->hot requires score >= 8_000.
+        // Default recency=5_000, cut_value=0, score=5_000 < 8_000.
+        let mut mgr = TierManager::<4>::new();
+        mgr.register(rid(1), Tier::Warm).unwrap();
+        assert_eq!(
+            mgr.promote(rid(1), Tier::Hot),
+            Err(RvmError::CoherenceBelowThreshold)
+        );
+    }
+
+    #[test]
+    fn dc1_fallback_promotion_possible_with_high_recency() {
+        let mut mgr = TierManager::<4>::new();
+        mgr.register(rid(1), Tier::Warm).unwrap();
+
+        // Boost recency to 8_000 by accessing 3 times
+        // (5_000 + 1_000 + 1_000 + 1_000 = 8_000)
+        mgr.record_access(rid(1)).unwrap();
+        mgr.record_access(rid(1)).unwrap();
+        mgr.record_access(rid(1)).unwrap();
+        let state = mgr.get(rid(1)).unwrap();
+        assert_eq!(state.recency_score, 8_000);
+        assert_eq!(state.residency_score(), 8_000); // cut_value still 0
+
+        // Now promotion to Hot should succeed (8_000 >= 8_000 threshold).
+        let old = mgr.promote(rid(1), Tier::Hot).unwrap();
+        assert_eq!(old, Tier::Warm);
+    }
+
+    #[test]
+    fn dc1_fallback_demotion_on_decay() {
+        let mut mgr = TierManager::<8>::new();
+        mgr.register(rid(1), Tier::Hot).unwrap();
+
+        // Default recency = 5_000, cut_value = 0.
+        // Hot->Warm threshold is 7_000. Since score=5_000 < 7_000, region
+        // should be a demotion candidate immediately.
+        let mut buf = [(OwnedRegionId::new(0), Tier::Hot); 8];
+        let n = mgr.find_demotion_candidates(&mut buf);
+        assert_eq!(n, 1);
+        assert_eq!(buf[0].0, rid(1));
+        assert_eq!(buf[0].1, Tier::Warm);
+    }
+
+    #[test]
+    fn dc1_fallback_warm_to_dormant_demotion_after_decay() {
+        let mut mgr = TierManager::<4>::new();
+        mgr.register(rid(1), Tier::Warm).unwrap();
+
+        // Decay recency to below warm_to_dormant threshold (4_000).
+        // Initial recency=5_000, decay by 2_000 -> 3_000 < 4_000.
+        mgr.decay_recency(2_000);
+        let mut buf = [(OwnedRegionId::new(0), Tier::Hot); 4];
+        let n = mgr.find_demotion_candidates(&mut buf);
+        assert_eq!(n, 1);
+        assert_eq!(buf[0].0, rid(1));
+        assert_eq!(buf[0].1, Tier::Dormant);
+    }
+
+    #[test]
+    fn dc1_fallback_dormant_to_cold_demotion() {
+        let mut mgr = TierManager::<4>::new();
+        mgr.register(rid(1), Tier::Dormant).unwrap();
+
+        // Decay recency to below dormant_to_cold threshold (1_000).
+        mgr.decay_recency(5_000); // recency 0
+        let mut buf = [(OwnedRegionId::new(0), Tier::Hot); 4];
+        let n = mgr.find_demotion_candidates(&mut buf);
+        assert_eq!(n, 1);
+        assert_eq!(buf[0].0, rid(1));
+        assert_eq!(buf[0].1, Tier::Cold);
+    }
+
+    #[test]
+    fn recency_access_saturates_at_10000() {
+        let mut mgr = TierManager::<4>::new();
+        mgr.register(rid(1), Tier::Warm).unwrap();
+
+        // Access many times to saturate.
+        for _ in 0..20 {
+            mgr.record_access(rid(1)).unwrap();
+        }
+        assert_eq!(mgr.get(rid(1)).unwrap().recency_score, 10_000);
+    }
+
+    #[test]
+    fn epoch_advance_is_monotonic() {
+        let mut mgr = TierManager::<4>::new();
+        for expected in 0..10u32 {
+            assert_eq!(mgr.current_epoch(), expected);
+            mgr.advance_epoch();
+        }
+        assert_eq!(mgr.current_epoch(), 10);
+    }
+
+    #[test]
+    fn registered_region_records_access_epoch() {
+        let mut mgr = TierManager::<4>::new();
+        mgr.advance_epoch();
+        mgr.advance_epoch(); // epoch = 2
+        mgr.register(rid(1), Tier::Warm).unwrap();
+        assert_eq!(mgr.get(rid(1)).unwrap().last_access_epoch, 2);
+
+        mgr.advance_epoch(); // epoch = 3
+        mgr.record_access(rid(1)).unwrap();
+        assert_eq!(mgr.get(rid(1)).unwrap().last_access_epoch, 3);
+    }
+
+    #[test]
+    fn find_demotion_candidates_respects_buffer_size() {
+        let mut mgr = TierManager::<8>::new();
+        for i in 1..=5u64 {
+            mgr.register(rid(i), Tier::Hot).unwrap();
+        }
+        // All 5 should be demotion candidates with default scores.
+        // But we only provide a buffer of size 2.
+        let mut buf = [(OwnedRegionId::new(0), Tier::Hot); 2];
+        let n = mgr.find_demotion_candidates(&mut buf);
+        assert_eq!(n, 2); // Only 2 fit.
+    }
+
+    #[test]
+    fn cold_region_not_a_demotion_candidate() {
+        let mut mgr = TierManager::<4>::new();
+        mgr.register(rid(1), Tier::Cold).unwrap();
+        mgr.decay_recency(10_000);
+
+        let mut buf = [(OwnedRegionId::new(0), Tier::Hot); 4];
+        let n = mgr.find_demotion_candidates(&mut buf);
+        // Cold has no lower tier, so not a candidate.
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn custom_thresholds() {
+        let thresholds = TierThresholds {
+            hot_to_warm: 9_000,
+            warm_to_dormant: 6_000,
+            dormant_to_cold: 3_000,
+            warm_to_hot: 9_500,
+            dormant_to_warm: 7_000,
+        };
+        let mgr = TierManager::<4>::with_thresholds(thresholds);
+        assert_eq!(mgr.count(), 0);
+    }
+
+    #[test]
+    fn update_cut_value_nonexistent_fails() {
+        let mut mgr = TierManager::<4>::new();
+        assert_eq!(
+            mgr.update_cut_value(rid(99), 5_000),
+            Err(RvmError::PartitionNotFound)
+        );
+    }
+
+    #[test]
+    fn promote_nonexistent_fails() {
+        let mut mgr = TierManager::<4>::new();
+        assert_eq!(
+            mgr.promote(rid(99), Tier::Hot),
+            Err(RvmError::PartitionNotFound)
+        );
+    }
+
+    #[test]
+    fn demote_nonexistent_fails() {
+        let mut mgr = TierManager::<4>::new();
+        assert_eq!(
+            mgr.demote(rid(99), Tier::Cold),
+            Err(RvmError::PartitionNotFound)
+        );
+    }
 }

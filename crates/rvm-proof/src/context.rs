@@ -199,4 +199,76 @@ mod tests {
         assert_eq!(ctx.max_delegation_depth, 4);
         assert_eq!(ctx.nonce, 99);
     }
+
+    // ---------------------------------------------------------------
+    // Edge-case tests for ProofContextBuilder
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_builder_default_region_bounds_are_zero() {
+        let ctx = ProofContextBuilder::new(PartitionId::new(1)).build();
+        assert_eq!(ctx.region_base, 0);
+        assert_eq!(ctx.region_limit, 0);
+    }
+
+    #[test]
+    fn test_builder_default_nonce_is_zero() {
+        let ctx = ProofContextBuilder::new(PartitionId::new(1)).build();
+        assert_eq!(ctx.nonce, 0);
+    }
+
+    #[test]
+    fn test_builder_default_time_window() {
+        let ctx = ProofContextBuilder::new(PartitionId::new(1)).build();
+        assert_eq!(ctx.current_time_ns, 0);
+        assert_eq!(ctx.lease_expiry_ns, u64::MAX);
+    }
+
+    #[test]
+    fn test_builder_default_capability_fields() {
+        let ctx = ProofContextBuilder::new(PartitionId::new(1)).build();
+        assert_eq!(ctx.capability_handle, 0);
+        assert_eq!(ctx.capability_generation, 0);
+        assert_eq!(ctx.current_epoch, 0);
+        assert_eq!(ctx.target_object, 0);
+        assert_eq!(ctx.requested_operation, 0);
+    }
+
+    #[test]
+    fn test_builder_hypervisor_partition() {
+        let ctx = ProofContextBuilder::new(PartitionId::HYPERVISOR).build();
+        assert_eq!(ctx.partition_id, PartitionId::HYPERVISOR);
+        assert!(ctx.partition_id.is_hypervisor());
+    }
+
+    #[test]
+    fn test_builder_max_delegation_depth_override() {
+        let ctx = ProofContextBuilder::new(PartitionId::new(1))
+            .max_delegation_depth(0)
+            .build();
+        assert_eq!(ctx.max_delegation_depth, 0);
+
+        let ctx2 = ProofContextBuilder::new(PartitionId::new(1))
+            .max_delegation_depth(255)
+            .build();
+        assert_eq!(ctx2.max_delegation_depth, 255);
+    }
+
+    #[test]
+    fn test_builder_overwrite_fields() {
+        // Setting the same field twice should use the last value.
+        let ctx = ProofContextBuilder::new(PartitionId::new(1))
+            .nonce(10)
+            .nonce(20)
+            .build();
+        assert_eq!(ctx.nonce, 20);
+    }
+
+    #[test]
+    fn test_builder_capability_generation() {
+        let ctx = ProofContextBuilder::new(PartitionId::new(1))
+            .capability_generation(42)
+            .build();
+        assert_eq!(ctx.capability_generation, 42);
+    }
 }

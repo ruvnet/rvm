@@ -25,8 +25,15 @@ impl RevokeResult {
 /// Revokes a capability and propagates through the derivation tree.
 ///
 /// Both the derivation tree and the capability table are updated:
-/// the tree marks nodes as invalid, and the table invalidates the
-/// corresponding slots (bumping generation counters).
+/// the tree marks nodes as invalid, and the table invalidates ALL
+/// corresponding slots (bumping generation counters) including
+/// every descendant in the derivation subtree.
+///
+/// # Security
+///
+/// It is critical that table invalidation covers ALL descendants,
+/// not just the root. Without this, a revoked child capability's
+/// table slot remains `is_valid: true` and would pass P1 verification.
 pub fn revoke_capability<const N: usize>(
     table: &mut CapabilityTable<N>,
     tree: &mut DerivationTree<N>,
@@ -36,16 +43,28 @@ pub fn revoke_capability<const N: usize>(
     // Validate that the handle is still valid.
     let _ = table.lookup(index, generation)?;
 
+    // Collect the set of indices that will be revoked by the tree walk.
+    // We must invalidate ALL of them in the table, not just the root.
+    let revoked_indices = tree.collect_subtree(index);
+
     // Revoke in the derivation tree (marks descendants invalid).
     let revoked = tree.revoke(index).map_err(|_| CapError::Revoked)?;
 
-    // Synchronize: invalidate the primary slot in the table.
-    table.force_invalidate(index);
+    // Synchronize: invalidate ALL revoked slots in the table,
+    // including the root and every descendant.
+    for &idx in &revoked_indices {
+        table.force_invalidate(idx);
+    }
 
     Ok(RevokeResult::new(revoked))
 }
 
 /// Revokes a single capability without propagation.
+///
+/// # Errors
+///
+/// Returns [`CapError::InvalidHandle`] if the handle is invalid.
+/// Returns [`CapError::StaleHandle`] if the generation does not match.
 pub fn revoke_single<const N: usize>(
     table: &mut CapabilityTable<N>,
     index: u32,

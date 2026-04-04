@@ -73,6 +73,8 @@ impl Proof {
             tier: ProofTier::Hash,
             commitment,
             data,
+            // Safe: len is clamped to 64 above, which fits in u8.
+            #[allow(clippy::cast_possible_truncation)]
             data_len: len as u8,
         }
     }
@@ -88,6 +90,10 @@ impl Proof {
 ///
 /// This is a stub implementation. The real implementation will dispatch
 /// to tier-specific verifiers (SHA-256, witness chain, ZK).
+///
+/// # Errors
+///
+/// Returns [`RvmError::ProofInvalid`] if the commitment does not match or the proof is empty.
 pub fn verify(proof: &Proof, expected_commitment: &WitnessHash) -> RvmResult<()> {
     if proof.commitment != *expected_commitment {
         return Err(RvmError::ProofInvalid);
@@ -110,6 +116,11 @@ pub fn verify(proof: &Proof, expected_commitment: &WitnessHash) -> RvmResult<()>
 }
 
 /// Check that a capability token authorizes proof submission, then verify.
+///
+/// # Errors
+///
+/// Returns [`RvmError::InsufficientCapability`] if the token lacks `PROVE` rights.
+/// Returns [`RvmError::ProofInvalid`] if the proof verification fails.
 pub fn verify_with_cap(
     proof: &Proof,
     expected_commitment: &WitnessHash,

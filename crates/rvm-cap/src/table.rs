@@ -54,10 +54,18 @@ impl CapSlot {
     }
 
     /// Invalidates this slot, incrementing the generation counter.
+    ///
+    /// # Security
+    ///
+    /// Generation 0 is the initial value for fresh slots, so wrapping
+    /// back to 0 would create a forgery window where a stale handle
+    /// could match a newly allocated slot. We skip 0 on wrap-around.
     #[inline]
     pub fn invalidate(&mut self) {
         self.is_valid = false;
-        self.generation = self.generation.wrapping_add(1);
+        let next_gen = self.generation.wrapping_add(1);
+        // Skip generation 0 to avoid aliasing with fresh slot defaults.
+        self.generation = if next_gen == 0 { 1 } else { next_gen };
     }
 }
 
@@ -79,7 +87,7 @@ impl<const N: usize> core::fmt::Debug for CapabilityTable<N> {
         f.debug_struct("CapabilityTable")
             .field("count", &self.count)
             .field("capacity", &N)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -124,6 +132,11 @@ impl<const N: usize> CapabilityTable<N> {
     }
 
     /// Inserts a root capability. Returns `(index, generation)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CapError::TableFull`] if no free slot is available.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn insert_root(
         &mut self,
         token: CapToken,
@@ -148,6 +161,11 @@ impl<const N: usize> CapabilityTable<N> {
     }
 
     /// Inserts a derived capability. Returns `(index, generation)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CapError::TableFull`] if no free slot is available.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn insert_derived(
         &mut self,
         token: CapToken,
@@ -174,6 +192,11 @@ impl<const N: usize> CapabilityTable<N> {
     }
 
     /// Looks up a slot by index and generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CapError::InvalidHandle`] if the index is out of bounds or the slot is empty.
+    /// Returns [`CapError::StaleHandle`] if the generation does not match.
     pub fn lookup(&self, index: u32, generation: u32) -> CapResult<&CapSlot> {
         let idx = index as usize;
         if idx >= N {
@@ -190,6 +213,11 @@ impl<const N: usize> CapabilityTable<N> {
     }
 
     /// Looks up a slot mutably by index and generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CapError::InvalidHandle`] if the index is out of bounds or the slot is empty.
+    /// Returns [`CapError::StaleHandle`] if the generation does not match.
     pub fn lookup_mut(&mut self, index: u32, generation: u32) -> CapResult<&mut CapSlot> {
         let idx = index as usize;
         if idx >= N {
@@ -206,6 +234,11 @@ impl<const N: usize> CapabilityTable<N> {
     }
 
     /// Removes a capability by index and generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CapError::InvalidHandle`] if the index is out of bounds or the slot is empty.
+    /// Returns [`CapError::StaleHandle`] if the generation does not match.
     pub fn remove(&mut self, index: u32, generation: u32) -> CapResult<()> {
         let idx = index as usize;
         if idx >= N {
@@ -226,16 +259,6 @@ impl<const N: usize> CapabilityTable<N> {
         Ok(())
     }
 
-    /// Returns a reference to the raw slot by index (for derivation tree walks).
-    pub(crate) fn raw_slot(&self, index: u32) -> Option<&CapSlot> {
-        let idx = index as usize;
-        if idx < N && self.slots[idx].is_valid {
-            Some(&self.slots[idx])
-        } else {
-            None
-        }
-    }
-
     /// Invalidates a slot by index without generation check (internal revocation).
     pub(crate) fn force_invalidate(&mut self, index: u32) {
         let idx = index as usize;
@@ -249,11 +272,13 @@ impl<const N: usize> CapabilityTable<N> {
     }
 
     /// Returns an iterator over all valid entries as `(index, &CapSlot)`.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn iter(&self) -> impl Iterator<Item = (u32, &CapSlot)> {
         self.slots
             .iter()
             .enumerate()
             .filter(|(_, s)| s.is_valid)
+            // Safe: N <= u32::MAX in practice (capped at 256).
             .map(|(i, s)| (i as u32, s))
     }
 

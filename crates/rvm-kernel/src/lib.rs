@@ -488,4 +488,163 @@ mod tests {
         assert!(!VERSION.is_empty());
         assert_eq!(CRATE_COUNT, 13);
     }
+
+    // ---------------------------------------------------------------
+    // Integration-style lifecycle tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_full_boot_create_tick_destroy_lifecycle() {
+        let mut kernel = Kernel::with_defaults();
+
+        // Phase 1: Boot
+        kernel.boot().unwrap();
+        assert!(kernel.is_booted());
+        let boot_witnesses = kernel.witness_count();
+        assert_eq!(boot_witnesses, 7);
+
+        // Phase 2: Create a partition
+        let config = PartitionConfig::default();
+        let id = kernel.create_partition(&config).unwrap();
+        assert_eq!(kernel.partition_count(), 1);
+        assert_eq!(kernel.witness_count(), boot_witnesses + 1);
+
+        // Phase 3: Tick the scheduler several times
+        for expected_epoch in 0..5u32 {
+            let summary = kernel.tick().unwrap();
+            assert_eq!(summary.epoch, expected_epoch);
+        }
+        assert_eq!(kernel.current_epoch(), 5);
+        // 5 ticks = 5 more witness records
+        assert_eq!(kernel.witness_count(), boot_witnesses + 1 + 5);
+
+        // Phase 4: Destroy the partition
+        kernel.destroy_partition(id).unwrap();
+        assert_eq!(kernel.witness_count(), boot_witnesses + 1 + 5 + 1);
+    }
+
+    #[test]
+    fn test_create_partition_with_zero_vcpus() {
+        let mut kernel = Kernel::with_defaults();
+        kernel.boot().unwrap();
+
+        // PartitionConfig allows vcpu_count=0 at the kernel level
+        // (the partition manager does not validate vcpu count).
+        let config = PartitionConfig {
+            vcpu_count: 0,
+            ..PartitionConfig::default()
+        };
+        let result = kernel.create_partition(&config);
+        // Should succeed -- validation is not enforced at this level.
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_destroy_before_boot_fails() {
+        let mut kernel = Kernel::with_defaults();
+        let id = PartitionId::new(1);
+        assert_eq!(kernel.destroy_partition(id), Err(RvmError::InvalidPartitionState));
+    }
+
+    #[test]
+    fn test_destroy_twice_succeeds_because_no_removal() {
+        // destroy_partition only verifies existence via get() but does
+        // not actually remove from the manager, so a second destroy of
+        // the same ID currently succeeds. This tests current behavior.
+        let mut kernel = Kernel::with_defaults();
+        kernel.boot().unwrap();
+
+        let config = PartitionConfig::default();
+        let id = kernel.create_partition(&config).unwrap();
+        assert!(kernel.destroy_partition(id).is_ok());
+        // Second destroy: partition is still present because destroy
+        // does not remove from the manager.
+        assert!(kernel.destroy_partition(id).is_ok());
+    }
+
+    #[test]
+    fn test_many_partitions_coexist() {
+        let mut kernel = Kernel::with_defaults();
+        kernel.boot().unwrap();
+
+        let config = PartitionConfig::default();
+        let mut ids = [PartitionId::new(0); 10];
+        for id in &mut ids {
+            *id = kernel.create_partition(&config).unwrap();
+        }
+        assert_eq!(kernel.partition_count(), 10);
+
+        // All IDs are unique.
+        for (i, a) in ids.iter().enumerate() {
+            for b in &ids[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+
+        // All are accessible.
+        for id in &ids {
+            assert!(kernel.partitions().get(*id).is_some());
+        }
+    }
+
+    #[test]
+    fn test_create_partition_emits_correct_witness_fields() {
+        let mut kernel = Kernel::with_defaults();
+        kernel.boot().unwrap();
+        let boot_count = kernel.witness_count();
+
+        let config = PartitionConfig::default();
+        let id = kernel.create_partition(&config).unwrap();
+
+        // The create witness is the record right after boot witnesses.
+        let record = kernel.witness_log().get(boot_count as usize).unwrap();
+        assert_eq!(record.action_kind, ActionKind::PartitionCreate as u8);
+        assert_eq!(record.proof_tier, 1);
+        assert_eq!(record.actor_partition_id, PartitionId::HYPERVISOR.as_u32());
+        assert_eq!(record.target_object_id, id.as_u32() as u64);
+    }
+
+    #[test]
+    fn test_destroy_partition_emits_correct_witness_fields() {
+        let mut kernel = Kernel::with_defaults();
+        kernel.boot().unwrap();
+
+        let config = PartitionConfig::default();
+        let id = kernel.create_partition(&config).unwrap();
+        let pre_destroy = kernel.witness_count();
+
+        kernel.destroy_partition(id).unwrap();
+        let record = kernel.witness_log().get(pre_destroy as usize).unwrap();
+        assert_eq!(record.action_kind, ActionKind::PartitionDestroy as u8);
+        assert_eq!(record.proof_tier, 1);
+        assert_eq!(record.target_object_id, id.as_u32() as u64);
+    }
+
+    #[test]
+    fn test_tick_emits_scheduler_epoch_witness() {
+        let mut kernel = Kernel::with_defaults();
+        kernel.boot().unwrap();
+        let pre_tick = kernel.witness_count();
+
+        kernel.tick().unwrap();
+        let record = kernel.witness_log().get(pre_tick as usize).unwrap();
+        assert_eq!(record.action_kind, ActionKind::SchedulerEpoch as u8);
+    }
+
+    #[test]
+    fn test_cap_manager_accessible() {
+        let mut kernel = Kernel::with_defaults();
+        kernel.boot().unwrap();
+
+        // Verify we can use the capability manager through the kernel.
+        let cap_mgr = kernel.cap_manager_mut();
+        let owner = PartitionId::new(1);
+        let result = cap_mgr.create_root_capability(
+            rvm_types::CapType::Partition,
+            rvm_types::CapRights::READ,
+            0,
+            owner,
+        );
+        assert!(result.is_ok());
+    }
 }

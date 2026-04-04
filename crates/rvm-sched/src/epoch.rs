@@ -1,7 +1,5 @@
 //! Epoch tracking for bulk witness summaries.
 
-use rvm_types::PartitionId;
-
 /// Summary of a scheduler epoch for witness logging (DC-10).
 #[derive(Debug, Clone, Copy)]
 pub struct EpochSummary {

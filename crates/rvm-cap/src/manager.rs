@@ -4,7 +4,7 @@
 //! capability operations: create, grant, revoke, verify.
 
 use crate::derivation::DerivationTree;
-use crate::error::{CapResult, ProofError};
+use crate::error::{CapError, CapResult, ProofError};
 use crate::grant::{validate_grant, GrantPolicy};
 use crate::revoke::{revoke_capability, RevokeResult};
 use crate::table::CapabilityTable;
@@ -153,6 +153,10 @@ impl<const N: usize> CapabilityManager<N> {
     }
 
     /// Creates a root capability for a new kernel object.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`CapError`] if the table is full or the derivation tree cannot be updated.
     pub fn create_root_capability(
         &mut self,
         cap_type: CapType,
@@ -161,7 +165,7 @@ impl<const N: usize> CapabilityManager<N> {
         owner: PartitionId,
     ) -> CapResult<(u32, u32)> {
         let id = self.next_id;
-        self.next_id += 1;
+        self.next_id = self.next_id.checked_add(1).ok_or(CapError::TableFull)?;
 
         let token = CapToken::new(id, cap_type, rights, self.epoch);
         let (index, generation) = self.table.insert_root(token, owner, badge)?;
@@ -175,6 +179,11 @@ impl<const N: usize> CapabilityManager<N> {
     }
 
     /// Grants a derived capability to another partition.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`CapError`] if the source is invalid, rights escalation is attempted,
+    /// or the delegation depth limit is exceeded.
     pub fn grant(
         &mut self,
         source_index: u32,
@@ -187,7 +196,7 @@ impl<const N: usize> CapabilityManager<N> {
         let source_copy = *source_slot;
 
         let id = self.next_id;
-        self.next_id += 1;
+        self.next_id = self.next_id.checked_add(1).ok_or(CapError::TableFull)?;
 
         let (derived_token, depth) = validate_grant(
             &source_copy,
@@ -195,7 +204,7 @@ impl<const N: usize> CapabilityManager<N> {
             id,
             badge,
             self.epoch,
-            &self.grant_policy,
+            self.grant_policy,
         )?;
 
         let (child_index, child_generation) = self.table.insert_derived(
@@ -224,6 +233,10 @@ impl<const N: usize> CapabilityManager<N> {
     }
 
     /// Revokes a capability and all its descendants.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`CapError`] if the handle is invalid or already revoked.
     pub fn revoke(&mut self, index: u32, generation: u32) -> CapResult<RevokeResult> {
         let result = revoke_capability(
             &mut self.table,
@@ -239,6 +252,10 @@ impl<const N: usize> CapabilityManager<N> {
     }
 
     /// P1 verification: capability existence + rights check (< 1 us).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProofError`] if the handle is invalid, stale, or lacks the required rights.
     pub fn verify_p1(
         &self,
         cap_index: u32,
@@ -249,6 +266,10 @@ impl<const N: usize> CapabilityManager<N> {
     }
 
     /// P2 verification: structural invariant validation (< 100 us).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProofError::PolicyViolation`] if any structural check fails.
     pub fn verify_p2(
         &mut self,
         cap_index: u32,
@@ -259,11 +280,16 @@ impl<const N: usize> CapabilityManager<N> {
     }
 
     /// P3 verification stub (returns `P3NotImplemented` in v1).
+    ///
+    /// # Errors
+    ///
+    /// Always returns [`ProofError::P3NotImplemented`] in v1.
     pub fn verify_p3(&self) -> Result<(), ProofError> {
         self.verifier.verify_p3()
     }
 
     /// Returns a reference to the underlying table.
+    #[must_use]
     pub fn table(&self) -> &CapabilityTable<N> {
         &self.table
     }

@@ -23,6 +23,10 @@ impl CapabilityTable {
     }
 
     /// Insert a capability into the table. Returns the slot index.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the table is full.
     pub fn insert(&mut self, token: CapToken) -> RvmResult<usize> {
         for (i, slot) in self.entries.iter_mut().enumerate() {
             if slot.is_none() {
@@ -41,6 +45,14 @@ impl CapabilityTable {
     }
 
     /// Remove a capability by slot index.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::InsufficientCapability`] if the slot is empty or out of bounds.
+    ///
+    /// # Panics
+    ///
+    /// Cannot panic: the `unwrap` is guarded by the `Some(_)` pattern match.
     pub fn remove(&mut self, index: usize) -> RvmResult<CapToken> {
         match self.entries.get_mut(index) {
             Some(slot @ Some(_)) => {

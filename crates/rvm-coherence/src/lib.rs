@@ -28,6 +28,25 @@
 #![deny(missing_docs)]
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_lossless,
+    clippy::cast_sign_loss,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate,
+    clippy::doc_markdown,
+    clippy::needless_range_loop,
+    clippy::manual_flatten,
+    clippy::manual_let_else,
+    clippy::match_same_arms,
+    clippy::if_not_else,
+    clippy::new_without_default,
+    clippy::explicit_iter_loop,
+    clippy::collapsible_else_if,
+    clippy::double_must_use,
+    clippy::result_large_err
+)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

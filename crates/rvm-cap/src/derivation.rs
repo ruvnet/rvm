@@ -115,6 +115,10 @@ impl<const N: usize> DerivationTree<N> {
     }
 
     /// Registers a root capability in the tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CapError::TreeFull`] if the index is out of bounds.
     pub fn add_root(&mut self, index: u32, epoch: u64) -> CapResult<()> {
         let idx = index as usize;
         if idx >= N {
@@ -126,6 +130,11 @@ impl<const N: usize> DerivationTree<N> {
     }
 
     /// Registers a derived capability in the tree, linking it to its parent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CapError::TreeFull`] if either index is out of bounds.
+    /// Returns [`CapError::Revoked`] if the parent node has been revoked.
     pub fn add_child(
         &mut self,
         parent_index: u32,
@@ -154,6 +163,11 @@ impl<const N: usize> DerivationTree<N> {
     }
 
     /// Revokes a node and all its descendants. Returns the count of revoked nodes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CapError::InvalidHandle`] if the index is out of bounds.
+    /// Returns [`CapError::Revoked`] if the node has already been revoked.
     pub fn revoke(&mut self, index: u32) -> CapResult<usize> {
         let idx = index as usize;
         if idx >= N {
@@ -166,6 +180,10 @@ impl<const N: usize> DerivationTree<N> {
     }
 
     /// Returns the depth of the node at the given index.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CapError::InvalidHandle`] if the index is invalid or the node is revoked.
     pub fn depth(&self, index: u32) -> CapResult<u8> {
         let idx = index as usize;
         if idx >= N || !self.nodes[idx].is_valid {
@@ -175,12 +193,14 @@ impl<const N: usize> DerivationTree<N> {
     }
 
     /// Returns true if the node at the given index is valid.
+    #[must_use]
     pub fn is_valid(&self, index: u32) -> bool {
         let idx = index as usize;
         idx < N && self.nodes[idx].is_valid
     }
 
     /// Returns a reference to a node by index.
+    #[must_use]
     pub fn get(&self, index: u32) -> Option<&DerivationNode> {
         let idx = index as usize;
         if idx < N && self.nodes[idx].is_valid {
@@ -190,27 +210,106 @@ impl<const N: usize> DerivationTree<N> {
         }
     }
 
-    /// Recursively revokes a subtree.
-    fn revoke_subtree(&mut self, index: u32) -> usize {
+    /// Collect all valid indices in the subtree rooted at `index`.
+    ///
+    /// Returns a fixed-size array of indices (up to N). This is used
+    /// by revocation to synchronize the capability table.
+    ///
+    /// Uses an iterative stack to avoid stack overflow on wide trees.
+    #[must_use]
+    pub fn collect_subtree(&self, index: u32) -> [u32; N] {
+        let mut result = [u32::MAX; N];
+        let mut result_count = 0;
+        let mut stack = [u32::MAX; N];
+        let mut stack_top = 0;
+
+        // Push the root.
         let idx = index as usize;
-        if idx >= N || !self.nodes[idx].is_valid {
-            return 0;
+        if idx < N && self.nodes[idx].is_valid {
+            stack[stack_top] = index;
+            stack_top += 1;
         }
 
-        let mut count = 1;
-        self.nodes[idx].is_valid = false;
-        self.count = self.count.saturating_sub(1);
-
-        // Walk all children via first-child / next-sibling chain.
-        let mut child = self.nodes[idx].first_child;
-        while child != u32::MAX {
-            let cidx = child as usize;
-            if cidx >= N {
-                break;
+        while stack_top > 0 {
+            stack_top -= 1;
+            let current = stack[stack_top];
+            let cidx = current as usize;
+            if cidx >= N || !self.nodes[cidx].is_valid {
+                continue;
             }
-            let next = self.nodes[cidx].next_sibling;
-            count += self.revoke_subtree(child);
-            child = next;
+
+            if result_count < N {
+                result[result_count] = current;
+                result_count += 1;
+            }
+
+            // Push children.
+            let mut child = self.nodes[cidx].first_child;
+            while child != u32::MAX {
+                let child_idx = child as usize;
+                if child_idx >= N {
+                    break;
+                }
+                if self.nodes[child_idx].is_valid && stack_top < N {
+                    stack[stack_top] = child;
+                    stack_top += 1;
+                }
+                child = self.nodes[child_idx].next_sibling;
+            }
+        }
+
+        result
+    }
+
+    /// Iteratively revokes a subtree using an explicit stack.
+    ///
+    /// # Security
+    ///
+    /// The previous recursive implementation could overflow the stack on
+    /// wide trees (e.g., 256 siblings under one parent). This iterative
+    /// version uses a fixed-size stack bounded by N to prevent stack
+    /// exhaustion denial-of-service.
+    fn revoke_subtree(&mut self, index: u32) -> usize {
+        let mut stack = [u32::MAX; N];
+        let mut stack_top: usize = 0;
+        let mut count: usize = 0;
+
+        // Push the root of the subtree.
+        let root_idx = index as usize;
+        if root_idx >= N || !self.nodes[root_idx].is_valid {
+            return 0;
+        }
+        stack[stack_top] = index;
+        stack_top += 1;
+
+        while stack_top > 0 {
+            stack_top -= 1;
+            let current = stack[stack_top];
+            let cidx = current as usize;
+
+            if cidx >= N || !self.nodes[cidx].is_valid {
+                continue;
+            }
+
+            // Revoke this node.
+            self.nodes[cidx].is_valid = false;
+            self.count = self.count.saturating_sub(1);
+            count += 1;
+
+            // Push all children onto the stack.
+            let mut child = self.nodes[cidx].first_child;
+            while child != u32::MAX {
+                let child_idx = child as usize;
+                if child_idx >= N {
+                    break;
+                }
+                if self.nodes[child_idx].is_valid && stack_top < N {
+                    stack[stack_top] = child;
+                    stack_top += 1;
+                }
+                // Read sibling BEFORE potentially invalidating the node.
+                child = self.nodes[child_idx].next_sibling;
+            }
         }
 
         count

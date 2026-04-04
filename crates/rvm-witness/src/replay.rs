@@ -34,6 +34,12 @@ impl core::fmt::Display for ChainIntegrityError {
 ///
 /// Returns `Ok(count)` if the chain is valid, or an error at the first
 /// broken link.
+///
+/// # Errors
+///
+/// Returns [`ChainIntegrityError::EmptyLog`] if the slice is empty.
+/// Returns [`ChainIntegrityError::ChainBreak`] if a chain link is broken.
+/// Returns [`ChainIntegrityError::RecordCorrupted`] if a record hash does not match.
 #[allow(clippy::cast_possible_truncation)]
 pub fn verify_chain(records: &[WitnessRecord]) -> Result<usize, ChainIntegrityError> {
     if records.is_empty() {
@@ -64,23 +70,23 @@ pub fn verify_chain(records: &[WitnessRecord]) -> Result<usize, ChainIntegrityEr
 }
 
 /// Returns an iterator over records matching the given partition ID.
-pub fn query_by_partition<'a>(
-    records: &'a [WitnessRecord], partition_id: u32,
-) -> impl Iterator<Item = &'a WitnessRecord> {
+pub fn query_by_partition(
+    records: &[WitnessRecord], partition_id: u32,
+) -> impl Iterator<Item = &WitnessRecord> {
     records.iter().filter(move |r| r.actor_partition_id == partition_id)
 }
 
 /// Returns an iterator over records matching the given action kind.
-pub fn query_by_action_kind<'a>(
-    records: &'a [WitnessRecord], kind: u8,
-) -> impl Iterator<Item = &'a WitnessRecord> {
+pub fn query_by_action_kind(
+    records: &[WitnessRecord], kind: u8,
+) -> impl Iterator<Item = &WitnessRecord> {
     records.iter().filter(move |r| r.action_kind == kind)
 }
 
 /// Returns an iterator over records within the given time range.
-pub fn query_by_time_range<'a>(
-    records: &'a [WitnessRecord], start_ns: u64, end_ns: u64,
-) -> impl Iterator<Item = &'a WitnessRecord> {
+pub fn query_by_time_range(
+    records: &[WitnessRecord], start_ns: u64, end_ns: u64,
+) -> impl Iterator<Item = &WitnessRecord> {
     records.iter().filter(move |r| r.timestamp_ns >= start_ns && r.timestamp_ns <= end_ns)
 }
 

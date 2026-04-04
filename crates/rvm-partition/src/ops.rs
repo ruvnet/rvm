@@ -41,14 +41,30 @@ impl Default for SplitConfig {
 /// Trait defining partition operations.
 pub trait PartitionOps {
     /// Create a new partition with the given configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the partition cannot be created.
     fn create_partition(&mut self, config: PartitionConfig) -> RvmResult<PartitionId>;
 
     /// Destroy a partition and reclaim its resources.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the partition is not found or cannot be destroyed.
     fn destroy_partition(&mut self, id: PartitionId) -> RvmResult<()>;
 
     /// Suspend a running partition.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the partition is not in a suspendable state.
     fn suspend_partition(&mut self, id: PartitionId) -> RvmResult<()>;
 
     /// Resume a suspended partition.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the partition is not suspended.
     fn resume_partition(&mut self, id: PartitionId) -> RvmResult<()>;
 }

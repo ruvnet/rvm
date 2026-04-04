@@ -7,7 +7,7 @@
 /// Re-export the canonical FNV-1a from rvm-types.
 pub use rvm_types::fnv1a_64;
 
-/// Compute the chain hash: FNV-1a of (prev_hash ++ sequence bytes).
+/// Compute the chain hash: FNV-1a of (`prev_hash` ++ sequence bytes).
 ///
 /// This is stored in the next record's `prev_hash` field (truncated to u32).
 #[must_use]

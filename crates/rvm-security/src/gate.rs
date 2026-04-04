@@ -80,6 +80,10 @@ impl<'a, const N: usize> SecurityGate<'a, N> {
     /// 4. Return `GateResponse` with witness sequence
     ///
     /// On failure, emits a `ProofRejected` witness and returns the error.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SecurityError`] if any pipeline stage fails.
     pub fn check_and_execute(&self, request: &GateRequest) -> Result<GateResponse, SecurityError> {
         // Step 1: P1 capability check — type match
         if request.token.cap_type() != request.required_type {
