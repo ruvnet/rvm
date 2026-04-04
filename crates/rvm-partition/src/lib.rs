@@ -36,6 +36,8 @@ extern crate std;
 
 mod cap_table;
 mod comm_edge;
+mod device;
+pub mod ipc;
 mod lifecycle;
 mod manager;
 mod merge;
@@ -45,6 +47,8 @@ mod split;
 
 pub use cap_table::CapabilityTable;
 pub use comm_edge::{CommEdge, CommEdgeId};
+pub use device::{ActiveLease, DeviceInfo, DeviceLeaseManager};
+pub use ipc::{IpcManager, IpcMessage, MessageQueue};
 pub use lifecycle::valid_transition;
 pub use manager::PartitionManager;
 pub use merge::{merge_preconditions_met, merge_preconditions_full, MergePreconditionError};

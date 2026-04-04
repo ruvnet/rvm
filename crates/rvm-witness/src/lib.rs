@@ -55,7 +55,8 @@ pub use replay::{
     ChainIntegrityError, verify_chain, query_by_partition, query_by_action_kind,
     query_by_time_range,
 };
-pub use signer::{NullSigner, WitnessSigner};
+#[allow(deprecated)]
+pub use signer::{NullSigner, StrictSigner, WitnessSigner, default_signer};
 
 /// Default ring buffer capacity: 262,144 records (16 MB / 64 bytes).
 pub const DEFAULT_RING_CAPACITY: usize = 262_144;

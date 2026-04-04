@@ -10,7 +10,10 @@ use crate::table::CapabilityTable;
 use rvm_types::CapRights;
 
 /// Nonce ring buffer size for replay prevention.
-const NONCE_RING_SIZE: usize = 64;
+///
+/// Increased from 64 to 4096 to prevent replay attacks that exploit
+/// the small ring buffer window (security finding: nonce ring too small).
+const NONCE_RING_SIZE: usize = 4096;
 
 /// Policy context for P2 validation.
 #[derive(Debug, Clone, Copy)]
@@ -41,16 +44,22 @@ pub struct ProofVerifier<const N: usize> {
     nonce_ring: [u64; NONCE_RING_SIZE],
     /// Write position in the nonce ring.
     nonce_write_pos: usize,
+    /// Monotonic watermark: any nonce below this value is rejected
+    /// outright, even if it has fallen off the ring buffer. This
+    /// prevents replaying very old nonces after ring eviction.
+    nonce_watermark: u64,
 }
 
 impl<const N: usize> ProofVerifier<N> {
     /// Creates a new proof verifier with the given epoch.
     #[must_use]
+    #[allow(clippy::large_stack_arrays)]
     pub const fn new(epoch: u32) -> Self {
         Self {
             current_epoch: epoch,
             nonce_ring: [0u64; NONCE_RING_SIZE],
             nonce_write_pos: 0,
+            nonce_watermark: 0,
         }
     }
 
@@ -184,19 +193,50 @@ impl<const N: usize> ProofVerifier<N> {
     }
 
     /// Checks if a nonce has been used recently.
+    ///
+    /// Rejects nonces that are below the monotonic watermark (very old
+    /// nonces that have already fallen off the ring) as well as nonces
+    /// still present in the ring buffer.
     fn check_nonce(&self, nonce: u64) -> bool {
+        // Zero nonce is a sentinel, not subject to replay.
+        if nonce == 0 {
+            return true;
+        }
+        // Watermark check: reject any nonce below the low-water mark.
+        if nonce <= self.nonce_watermark {
+            return false;
+        }
         for entry in &self.nonce_ring {
-            if *entry == nonce && nonce != 0 {
+            if *entry == nonce {
                 return false;
             }
         }
         true
     }
 
-    /// Records a nonce as used.
+    /// Records a nonce as used and advances the watermark.
     fn mark_nonce(&mut self, nonce: u64) {
+        if nonce == 0 {
+            return;
+        }
         self.nonce_ring[self.nonce_write_pos] = nonce;
         self.nonce_write_pos = (self.nonce_write_pos + 1) % NONCE_RING_SIZE;
+        // Advance watermark: the watermark tracks the minimum nonce
+        // that was evicted from the ring. When we wrap, the oldest
+        // entry is being overwritten, so we bump the watermark.
+        if self.nonce_write_pos == 0 {
+            // We just wrapped. Find the minimum value in the ring
+            // to set as the new watermark.
+            let mut min_val = u64::MAX;
+            for entry in &self.nonce_ring {
+                if *entry != 0 && *entry < min_val {
+                    min_val = *entry;
+                }
+            }
+            if min_val != u64::MAX && min_val > self.nonce_watermark {
+                self.nonce_watermark = min_val;
+            }
+        }
     }
 }
 
@@ -294,5 +334,70 @@ mod tests {
     fn test_p3_not_implemented() {
         let verifier = ProofVerifier::<64>::new(0);
         assert_eq!(verifier.verify_p3(), Err(ProofError::P3NotImplemented));
+    }
+
+    #[test]
+    fn test_nonce_ring_4096_churn() {
+        // Verify that after filling the 4096-entry ring, old nonces are
+        // rejected by the monotonic watermark even after eviction.
+        let (mut table, mut tree, mut verifier) = setup();
+        let token = CapToken::new(100, CapType::Region, all_rights(), 0);
+        let (idx, gen) = table.insert_root(token, PartitionId::new(1), 0).unwrap();
+        tree.add_root(idx, 0).unwrap();
+
+        // Insert 4096 nonces (1..=4096).
+        for i in 1..=4096u64 {
+            let ctx = PolicyContext {
+                expected_owner: 1,
+                region_base: 0x1000,
+                region_limit: 0x2000,
+                lease_expiry_ns: 1_000_000_000,
+                current_time_ns: 500_000_000,
+                max_delegation_depth: 8,
+                nonce: i,
+            };
+            assert!(verifier.verify_p2(&table, &tree, idx, gen, &ctx).is_ok());
+        }
+
+        // Now insert one more to push nonce 1 out and trigger watermark.
+        let ctx_new = PolicyContext {
+            expected_owner: 1,
+            region_base: 0x1000,
+            region_limit: 0x2000,
+            lease_expiry_ns: 1_000_000_000,
+            current_time_ns: 500_000_000,
+            max_delegation_depth: 8,
+            nonce: 4097,
+        };
+        assert!(verifier.verify_p2(&table, &tree, idx, gen, &ctx_new).is_ok());
+
+        // Nonce 1 should be rejected by the watermark even though it
+        // has been evicted from the ring.
+        let ctx_old = PolicyContext {
+            expected_owner: 1,
+            region_base: 0x1000,
+            region_limit: 0x2000,
+            lease_expiry_ns: 1_000_000_000,
+            current_time_ns: 500_000_000,
+            max_delegation_depth: 8,
+            nonce: 1,
+        };
+        assert_eq!(
+            verifier.verify_p2(&table, &tree, idx, gen, &ctx_old),
+            Err(ProofError::PolicyViolation)
+        );
+    }
+
+    #[test]
+    fn test_watermark_rejects_below_minimum() {
+        let mut verifier = ProofVerifier::<64>::new(0);
+        // Manually advance the watermark by filling the ring and wrapping.
+        // Use nonces 100..100+4096 to set a high watermark.
+        for i in 100..100 + 4096u64 {
+            verifier.mark_nonce(i);
+        }
+        // Nonce below the watermark should be rejected.
+        assert!(!verifier.check_nonce(1));
+        assert!(!verifier.check_nonce(99));
     }
 }

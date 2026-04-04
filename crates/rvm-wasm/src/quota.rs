@@ -94,6 +94,18 @@ impl<const MAX: usize> QuotaTracker<MAX> {
     ///
     /// Returns `Ok(())` if the requested amount is within budget,
     /// or `Err(ResourceLimitExceeded)` if it would exceed the quota.
+    ///
+    /// # Deprecation
+    ///
+    /// **Do not use `check_quota` followed by `record_usage`.** This two-step
+    /// pattern is vulnerable to TOCTOU (time-of-check-to-time-of-use) races
+    /// where a concurrent caller can pass the check before either records
+    /// usage. Use [`check_and_record_cpu`], [`check_and_record_memory`], or
+    /// [`check_and_record_ipc`] instead, which atomically check and record
+    /// in a single step.
+    #[deprecated(
+        note = "Use check_and_record_cpu / check_and_record_memory / check_and_record_ipc instead (TOCTOU fix)"
+    )]
     pub fn check_quota(
         &self,
         partition: PartitionId,
@@ -117,6 +129,15 @@ impl<const MAX: usize> QuotaTracker<MAX> {
 
     /// Record resource consumption. Does not enforce -- caller should
     /// call `check_quota` first.
+    ///
+    /// # Deprecation
+    ///
+    /// **Do not use `record_usage` after `check_quota`.** This two-step
+    /// pattern is vulnerable to TOCTOU races. Use the combined
+    /// `check_and_record_*` methods instead.
+    #[deprecated(
+        note = "Use check_and_record_cpu / check_and_record_memory / check_and_record_ipc instead (TOCTOU fix)"
+    )]
     pub fn record_usage(
         &mut self,
         partition: PartitionId,
@@ -136,6 +157,72 @@ impl<const MAX: usize> QuotaTracker<MAX> {
                 usage.agent_count = usage.agent_count.saturating_add(amount as u16);
             }
         }
+        Ok(())
+    }
+
+    /// Atomically check and record CPU usage in microseconds.
+    ///
+    /// If the requested amount would exceed the quota, no usage is
+    /// recorded and `Err(ResourceLimitExceeded)` is returned. This
+    /// eliminates the TOCTOU race in the deprecated `check_quota` +
+    /// `record_usage` pattern.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if adding `us` would
+    /// exceed the partition's CPU budget.
+    /// Returns [`RvmError::PartitionNotFound`] if the partition is not registered.
+    pub fn check_and_record_cpu(
+        &mut self,
+        partition: PartitionId,
+        us: u64,
+    ) -> RvmResult<()> {
+        let (_, quota, usage) = self.find_mut(partition)?;
+        if usage.cpu_us + us > quota.max_cpu_us_per_epoch {
+            return Err(RvmError::ResourceLimitExceeded);
+        }
+        usage.cpu_us = usage.cpu_us.saturating_add(us);
+        Ok(())
+    }
+
+    /// Atomically check and record memory page allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if adding `pages` would
+    /// exceed the partition's memory budget.
+    /// Returns [`RvmError::PartitionNotFound`] if the partition is not registered.
+    pub fn check_and_record_memory(
+        &mut self,
+        partition: PartitionId,
+        pages: u32,
+    ) -> RvmResult<()> {
+        let (_, quota, usage) = self.find_mut(partition)?;
+        if u64::from(usage.memory_pages) + u64::from(pages)
+            > u64::from(quota.max_memory_pages)
+        {
+            return Err(RvmError::ResourceLimitExceeded);
+        }
+        usage.memory_pages = usage.memory_pages.saturating_add(pages);
+        Ok(())
+    }
+
+    /// Atomically check and record one IPC message.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the IPC count would
+    /// exceed the partition's per-epoch budget.
+    /// Returns [`RvmError::PartitionNotFound`] if the partition is not registered.
+    pub fn check_and_record_ipc(
+        &mut self,
+        partition: PartitionId,
+    ) -> RvmResult<()> {
+        let (_, quota, usage) = self.find_mut(partition)?;
+        if u64::from(usage.ipc_count) + 1 > u64::from(quota.max_ipc_per_epoch) {
+            return Err(RvmError::ResourceLimitExceeded);
+        }
+        usage.ipc_count = usage.ipc_count.saturating_add(1);
         Ok(())
     }
 
@@ -285,6 +372,123 @@ mod tests {
         assert_eq!(
             tracker.register(pid(3), PartitionQuota::default()),
             Err(RvmError::ResourceLimitExceeded)
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Atomic check_and_record_* tests (TOCTOU fix)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_check_and_record_cpu_within_budget() {
+        let mut tracker = QuotaTracker::<4>::new();
+        tracker.register(pid(1), PartitionQuota::default()).unwrap();
+
+        // Default max is 10_000 us.
+        tracker.check_and_record_cpu(pid(1), 5_000).unwrap();
+        assert_eq!(tracker.usage(pid(1)).unwrap().cpu_us, 5_000);
+
+        tracker.check_and_record_cpu(pid(1), 5_000).unwrap();
+        assert_eq!(tracker.usage(pid(1)).unwrap().cpu_us, 10_000);
+    }
+
+    #[test]
+    fn test_check_and_record_cpu_exceeds_budget() {
+        let mut tracker = QuotaTracker::<4>::new();
+        tracker.register(pid(1), PartitionQuota::default()).unwrap();
+
+        // This should fail because 10_001 > 10_000.
+        assert_eq!(
+            tracker.check_and_record_cpu(pid(1), 10_001),
+            Err(RvmError::ResourceLimitExceeded)
+        );
+        // Usage should not have changed.
+        assert_eq!(tracker.usage(pid(1)).unwrap().cpu_us, 0);
+    }
+
+    #[test]
+    fn test_check_and_record_cpu_partial_then_exceed() {
+        let mut tracker = QuotaTracker::<4>::new();
+        tracker.register(pid(1), PartitionQuota::default()).unwrap();
+
+        tracker.check_and_record_cpu(pid(1), 8_000).unwrap();
+        assert_eq!(
+            tracker.check_and_record_cpu(pid(1), 2_001),
+            Err(RvmError::ResourceLimitExceeded)
+        );
+        // Usage should remain at 8_000.
+        assert_eq!(tracker.usage(pid(1)).unwrap().cpu_us, 8_000);
+    }
+
+    #[test]
+    fn test_check_and_record_memory_within_budget() {
+        let mut tracker = QuotaTracker::<4>::new();
+        tracker.register(pid(1), PartitionQuota::default()).unwrap();
+
+        // Default max is 256 pages.
+        tracker.check_and_record_memory(pid(1), 100).unwrap();
+        assert_eq!(tracker.usage(pid(1)).unwrap().memory_pages, 100);
+
+        tracker.check_and_record_memory(pid(1), 156).unwrap();
+        assert_eq!(tracker.usage(pid(1)).unwrap().memory_pages, 256);
+    }
+
+    #[test]
+    fn test_check_and_record_memory_exceeds_budget() {
+        let mut tracker = QuotaTracker::<4>::new();
+        tracker.register(pid(1), PartitionQuota::default()).unwrap();
+
+        assert_eq!(
+            tracker.check_and_record_memory(pid(1), 257),
+            Err(RvmError::ResourceLimitExceeded)
+        );
+        assert_eq!(tracker.usage(pid(1)).unwrap().memory_pages, 0);
+    }
+
+    #[test]
+    fn test_check_and_record_ipc_within_budget() {
+        let mut tracker = QuotaTracker::<4>::new();
+        tracker.register(pid(1), PartitionQuota::default()).unwrap();
+
+        // Default max is 1024.
+        for _ in 0..1024 {
+            tracker.check_and_record_ipc(pid(1)).unwrap();
+        }
+        assert_eq!(tracker.usage(pid(1)).unwrap().ipc_count, 1024);
+    }
+
+    #[test]
+    fn test_check_and_record_ipc_exceeds_budget() {
+        let mut tracker = QuotaTracker::<4>::new();
+        let quota = PartitionQuota {
+            max_ipc_per_epoch: 2,
+            ..PartitionQuota::default()
+        };
+        tracker.register(pid(1), quota).unwrap();
+
+        tracker.check_and_record_ipc(pid(1)).unwrap();
+        tracker.check_and_record_ipc(pid(1)).unwrap();
+        assert_eq!(
+            tracker.check_and_record_ipc(pid(1)),
+            Err(RvmError::ResourceLimitExceeded)
+        );
+        assert_eq!(tracker.usage(pid(1)).unwrap().ipc_count, 2);
+    }
+
+    #[test]
+    fn test_check_and_record_unknown_partition() {
+        let mut tracker = QuotaTracker::<4>::new();
+        assert_eq!(
+            tracker.check_and_record_cpu(pid(99), 1),
+            Err(RvmError::PartitionNotFound)
+        );
+        assert_eq!(
+            tracker.check_and_record_memory(pid(99), 1),
+            Err(RvmError::PartitionNotFound)
+        );
+        assert_eq!(
+            tracker.check_and_record_ipc(pid(99)),
+            Err(RvmError::PartitionNotFound)
         );
     }
 }

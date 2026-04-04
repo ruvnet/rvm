@@ -18,16 +18,46 @@
 //! - Zero-copy: pass borrowed slices, never owned buffers
 
 #![no_std]
-#![forbid(unsafe_code)]
+// NOTE: `deny` instead of `forbid` because the HAL is the hardware boundary.
+// Concrete arch implementations (aarch64, riscv, x86_64) require `unsafe`
+// for register access, MMIO, and inline assembly. Every `unsafe` block in
+// this crate must have a `// SAFETY:` comment documenting its invariant.
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
+#![allow(clippy::new_without_default)]
+#![allow(clippy::empty_line_after_doc_comments)]
+#![allow(clippy::identity_op)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::must_use_candidate)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::verbose_bit_mask)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::unnecessary_wraps)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
 #[cfg(feature = "std")]
 extern crate std;
+
+/// AArch64-specific HAL implementation (QEMU virt, Cortex-A72).
+///
+/// This module is only compiled when targeting `aarch64`. It contains
+/// the EL2 boot stubs, stage-2 page table management, PL011 UART
+/// driver, GICv2 interrupt controller, and ARM generic timer.
+///
+/// `unsafe_code` is allowed here because this is the hardware boundary:
+/// register access, MMIO writes, and inline assembly all require it.
+#[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
+pub mod aarch64;
 
 use rvm_types::{GuestPhysAddr, PhysAddr, RvmResult};
 

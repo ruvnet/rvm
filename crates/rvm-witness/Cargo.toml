@@ -23,3 +23,4 @@ spin = { workspace = true, features = ["mutex", "spin_mutex"] }
 default = []
 std = ["rvm-types/std"]
 alloc = ["rvm-types/alloc"]
+strict-signing = []

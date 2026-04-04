@@ -303,27 +303,89 @@ pub fn create_checkpoint(
     Ok((checkpoint, compressed_size))
 }
 
-// --- Compression stubs ---
+// --- LZ4-style RLE Compression ---
 //
-// These implement a trivial "compression" scheme suitable for testing.
-// In production, these would delegate to lz4_flex or hardware compression.
+// A simplified LZ4-inspired compressor for dormant tier data.
+// Uses run-length encoding for zero runs and literal copy for non-zero
+// segments. This provides meaningful compression for memory snapshots
+// (which tend to be zero-heavy) without requiring the full lz4_flex
+// dependency.
 //
-// Format: [4-byte uncompressed length (LE)] [raw data]
-// This is intentionally not a real compression algorithm -- it just frames
-// the data so that decompress can validate the length.
+// Format:
+//   [4-byte uncompressed length (LE)]
+//   Sequence of blocks:
+//     Tag byte:
+//       0x00 = Zero run:  next 2 bytes (LE u16) = run length
+//       0x01 = Literal:   next 2 bytes (LE u16) = literal length, then N literal bytes
+//
+// This is a v1 compressor suitable for correctness; a future version
+// may use full LZ4 frame format with match copying.
 
-/// Compress `input` into `output`. Returns the number of bytes written.
+/// Tag byte for a zero-run block.
+const TAG_ZERO_RUN: u8 = 0x00;
+/// Tag byte for a literal block.
+const TAG_LITERAL: u8 = 0x01;
+
+/// Compress `input` into `output` using simplified RLE compression.
+///
+/// Returns the number of bytes written to `output`.
 fn compress(input: &[u8], output: &mut [u8]) -> RvmResult<usize> {
-    let needed = input.len() + 4; // 4-byte length header.
-    if output.len() < needed {
+    // Minimum output: 4-byte header. Even empty-ish data needs the header.
+    if output.len() < 4 {
         return Err(RvmError::ResourceLimitExceeded);
     }
 
+    // Write uncompressed length header.
     #[allow(clippy::cast_possible_truncation)]
     let len_bytes = (input.len() as u32).to_le_bytes();
     output[0..4].copy_from_slice(&len_bytes);
-    output[4..needed].copy_from_slice(input);
-    Ok(needed)
+
+    let mut out_pos = 4;
+    let mut in_pos = 0;
+
+    while in_pos < input.len() {
+        if input[in_pos] == 0 {
+            // Count consecutive zeros.
+            let run_start = in_pos;
+            while in_pos < input.len() && input[in_pos] == 0 && (in_pos - run_start) < 0xFFFF {
+                in_pos += 1;
+            }
+            let run_len = in_pos - run_start;
+
+            // Write zero-run block: tag + u16 length.
+            if out_pos + 3 > output.len() {
+                return Err(RvmError::ResourceLimitExceeded);
+            }
+            output[out_pos] = TAG_ZERO_RUN;
+            #[allow(clippy::cast_possible_truncation)]
+            let rl = (run_len as u16).to_le_bytes();
+            output[out_pos + 1] = rl[0];
+            output[out_pos + 2] = rl[1];
+            out_pos += 3;
+        } else {
+            // Collect non-zero literal bytes.
+            let lit_start = in_pos;
+            while in_pos < input.len() && input[in_pos] != 0 && (in_pos - lit_start) < 0xFFFF {
+                in_pos += 1;
+            }
+            let lit_len = in_pos - lit_start;
+
+            // Write literal block: tag + u16 length + data.
+            if out_pos + 3 + lit_len > output.len() {
+                return Err(RvmError::ResourceLimitExceeded);
+            }
+            output[out_pos] = TAG_LITERAL;
+            #[allow(clippy::cast_possible_truncation)]
+            let ll = (lit_len as u16).to_le_bytes();
+            output[out_pos + 1] = ll[0];
+            output[out_pos + 2] = ll[1];
+            output[out_pos + 3..out_pos + 3 + lit_len]
+                .copy_from_slice(&input[lit_start..lit_start + lit_len]);
+            out_pos += 3 + lit_len;
+        }
+    }
+
+    Ok(out_pos)
 }
 
 /// Decompress `input` into `output`. Returns the number of bytes written.
@@ -336,14 +398,54 @@ fn decompress(input: &[u8], output: &mut [u8]) -> RvmResult<usize> {
     len_bytes.copy_from_slice(&input[0..4]);
     let uncompressed_len = u32::from_le_bytes(len_bytes) as usize;
 
-    if input.len() < 4 + uncompressed_len {
-        return Err(RvmError::CheckpointCorrupted);
-    }
     if output.len() < uncompressed_len {
         return Err(RvmError::ResourceLimitExceeded);
     }
 
-    output[..uncompressed_len].copy_from_slice(&input[4..4 + uncompressed_len]);
+    let mut in_pos = 4;
+    let mut out_pos = 0;
+
+    while in_pos < input.len() && out_pos < uncompressed_len {
+        if in_pos + 3 > input.len() {
+            return Err(RvmError::CheckpointCorrupted);
+        }
+        let tag = input[in_pos];
+        let block_len =
+            u16::from_le_bytes([input[in_pos + 1], input[in_pos + 2]]) as usize;
+        in_pos += 3;
+
+        match tag {
+            TAG_ZERO_RUN => {
+                if out_pos + block_len > uncompressed_len {
+                    return Err(RvmError::CheckpointCorrupted);
+                }
+                for b in &mut output[out_pos..out_pos + block_len] {
+                    *b = 0;
+                }
+                out_pos += block_len;
+            }
+            TAG_LITERAL => {
+                if in_pos + block_len > input.len() {
+                    return Err(RvmError::CheckpointCorrupted);
+                }
+                if out_pos + block_len > uncompressed_len {
+                    return Err(RvmError::CheckpointCorrupted);
+                }
+                output[out_pos..out_pos + block_len]
+                    .copy_from_slice(&input[in_pos..in_pos + block_len]);
+                in_pos += block_len;
+                out_pos += block_len;
+            }
+            _ => {
+                return Err(RvmError::CheckpointCorrupted);
+            }
+        }
+    }
+
+    if out_pos != uncompressed_len {
+        return Err(RvmError::CheckpointCorrupted);
+    }
+
     Ok(uncompressed_len)
 }
 
@@ -373,7 +475,9 @@ mod tests {
         let data = b"Hello, dormant memory reconstruction!";
         let mut compressed = [0u8; 256];
         let compressed_len = compress(data, &mut compressed).unwrap();
-        assert_eq!(compressed_len, data.len() + 4);
+        // RLE format: 4-byte header + literal block(3 + data.len()).
+        // All non-zero ASCII text → one literal block.
+        assert_eq!(compressed_len, data.len() + 4 + 3);
 
         let mut decompressed = [0u8; 256];
         let decompressed_len =
@@ -986,5 +1090,128 @@ mod tests {
         assert_eq!(result.deltas_applied, 2);
         // Second delta overwrites the first.
         assert_eq!(&output[0..2], &[0xBB, 0xBB]);
+    }
+
+    // ---------------------------------------------------------------
+    // RLE compression tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn compress_decompress_rle_round_trip() {
+        let data = b"Hello, dormant memory reconstruction!";
+        let mut compressed = [0u8; 256];
+        let compressed_len = compress(data, &mut compressed).unwrap();
+
+        let mut decompressed = [0u8; 256];
+        let decompressed_len =
+            decompress(&compressed[..compressed_len], &mut decompressed).unwrap();
+        assert_eq!(decompressed_len, data.len());
+        assert_eq!(&decompressed[..decompressed_len], data.as_slice());
+    }
+
+    #[test]
+    fn compress_zero_heavy_data_achieves_ratio() {
+        // 1024 bytes of mostly zeros should compress significantly.
+        let mut data = [0u8; 1024];
+        // Sprinkle some non-zero bytes.
+        data[0] = 0xAA;
+        data[512] = 0xBB;
+        data[1023] = 0xCC;
+
+        let mut compressed = [0u8; 1024];
+        let compressed_len = compress(&data, &mut compressed).unwrap();
+
+        // Should be much smaller than 1024 bytes.
+        // Header(4) + zero_run(3) for first run of 0s is negligible vs 1024 raw.
+        assert!(
+            compressed_len < data.len() / 2,
+            "compressed {compressed_len} should be less than {}",
+            data.len() / 2
+        );
+
+        // Round-trip verification.
+        let mut decompressed = [0u8; 1024];
+        let decompressed_len =
+            decompress(&compressed[..compressed_len], &mut decompressed).unwrap();
+        assert_eq!(decompressed_len, 1024);
+        assert_eq!(&decompressed[..], &data[..]);
+    }
+
+    #[test]
+    fn compress_all_zeros() {
+        let data = [0u8; 512];
+        let mut compressed = [0u8; 64];
+        let compressed_len = compress(&data, &mut compressed).unwrap();
+
+        // Should be very small: header(4) + one zero-run block(3) = 7 bytes.
+        assert_eq!(compressed_len, 7);
+
+        let mut decompressed = [0u8; 512];
+        let decompressed_len =
+            decompress(&compressed[..compressed_len], &mut decompressed).unwrap();
+        assert_eq!(decompressed_len, 512);
+        assert_eq!(&decompressed[..], &data[..]);
+    }
+
+    #[test]
+    fn compress_all_nonzero() {
+        // All non-zero data should still round-trip, just with no compression gain.
+        let data = [0xFFu8; 64];
+        let mut compressed = [0u8; 256];
+        let compressed_len = compress(&data, &mut compressed).unwrap();
+
+        // Header(4) + literal block(3 + 64) = 71 bytes.
+        assert_eq!(compressed_len, 4 + 3 + 64);
+
+        let mut decompressed = [0u8; 64];
+        let decompressed_len =
+            decompress(&compressed[..compressed_len], &mut decompressed).unwrap();
+        assert_eq!(decompressed_len, 64);
+        assert_eq!(&decompressed[..], &data[..]);
+    }
+
+    #[test]
+    fn compress_alternating_zero_nonzero() {
+        // Pattern: [0, 0xAA, 0, 0xBB, 0, 0xCC] -- alternating.
+        let data = [0, 0xAA, 0, 0xBB, 0, 0xCC];
+        let mut compressed = [0u8; 128];
+        let compressed_len = compress(&data, &mut compressed).unwrap();
+
+        let mut decompressed = [0u8; 128];
+        let decompressed_len =
+            decompress(&compressed[..compressed_len], &mut decompressed).unwrap();
+        assert_eq!(decompressed_len, data.len());
+        assert_eq!(&decompressed[..data.len()], &data[..]);
+    }
+
+    #[test]
+    fn decompress_invalid_tag() {
+        // Craft invalid compressed data with an unknown tag byte.
+        let mut bad = [0u8; 16];
+        // Header: uncompressed length = 4.
+        bad[0..4].copy_from_slice(&4u32.to_le_bytes());
+        bad[4] = 0xFF; // Invalid tag.
+        bad[5] = 4;
+        bad[6] = 0;
+
+        let mut output = [0u8; 16];
+        assert_eq!(
+            decompress(&bad[..7], &mut output),
+            Err(RvmError::CheckpointCorrupted)
+        );
+    }
+
+    #[test]
+    fn compress_empty_input_round_trip() {
+        // Empty input should produce just the 4-byte header.
+        let data: [u8; 0] = [];
+        let mut compressed = [0u8; 16];
+        let compressed_len = compress(&data, &mut compressed).unwrap();
+        assert_eq!(compressed_len, 4);
+
+        let mut decompressed = [0u8; 1];
+        let decompressed_len =
+            decompress(&compressed[..compressed_len], &mut decompressed).unwrap();
+        assert_eq!(decompressed_len, 0);
     }
 }

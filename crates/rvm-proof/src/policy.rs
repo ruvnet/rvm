@@ -26,12 +26,20 @@ pub enum Rule {
 }
 
 /// Nonce ring buffer size for replay detection.
-const NONCE_RING_SIZE: usize = 64;
+///
+/// Increased from 64 to 4096 to prevent replay attacks that exploit
+/// the small ring buffer window (security finding: nonce ring too small).
+const NONCE_RING_SIZE: usize = 4096;
 
 /// Evaluator state for policy rules, including nonce tracking.
+#[allow(clippy::struct_field_names)]
 pub struct PolicyEvaluator {
     nonce_ring: [u64; NONCE_RING_SIZE],
     nonce_write_pos: usize,
+    /// Monotonic watermark: any nonce at or below this value is rejected
+    /// outright, even if it has fallen off the ring buffer. This
+    /// prevents replaying very old nonces after ring eviction.
+    nonce_watermark: u64,
 }
 
 impl Default for PolicyEvaluator {
@@ -43,10 +51,12 @@ impl Default for PolicyEvaluator {
 impl PolicyEvaluator {
     /// Create a new policy evaluator with an empty nonce ring.
     #[must_use]
+    #[allow(clippy::large_stack_arrays)]
     pub const fn new() -> Self {
         Self {
             nonce_ring: [0u64; NONCE_RING_SIZE],
             nonce_write_pos: 0,
+            nonce_watermark: 0,
         }
     }
 
@@ -152,9 +162,16 @@ impl PolicyEvaluator {
     }
 
     /// Check whether a nonce has been seen before.
+    ///
+    /// Also rejects nonces at or below the monotonic watermark to
+    /// prevent replaying very old nonces that have fallen off the ring.
     fn is_nonce_replayed(&self, nonce: u64) -> bool {
         if nonce == 0 {
             return false; // Zero nonce is a sentinel, not subject to replay.
+        }
+        // Watermark check: reject any nonce at or below the low-water mark.
+        if nonce <= self.nonce_watermark {
+            return true;
         }
         for &entry in &self.nonce_ring {
             if entry == nonce {
@@ -164,10 +181,22 @@ impl PolicyEvaluator {
         false
     }
 
-    /// Record a nonce as used.
+    /// Record a nonce as used and advance the watermark on wrap.
     fn record_nonce(&mut self, nonce: u64) {
         self.nonce_ring[self.nonce_write_pos] = nonce;
         self.nonce_write_pos = (self.nonce_write_pos + 1) % NONCE_RING_SIZE;
+        // Advance watermark when the write pointer wraps around.
+        if self.nonce_write_pos == 0 {
+            let mut min_val = u64::MAX;
+            for &entry in &self.nonce_ring {
+                if entry != 0 && entry < min_val {
+                    min_val = entry;
+                }
+            }
+            if min_val != u64::MAX && min_val > self.nonce_watermark {
+                self.nonce_watermark = min_val;
+            }
+        }
     }
 }
 
@@ -434,8 +463,8 @@ mod tests {
     fn test_nonce_replay_across_ring_wrap() {
         let mut evaluator = PolicyEvaluator::new();
 
-        // Fill the ring buffer with 64 unique nonces.
-        for i in 1..=64u64 {
+        // Fill the ring buffer with 4096 unique nonces.
+        for i in 1..=4096u64 {
             let ctx = ProofContextBuilder::new(PartitionId::new(1))
                 .region_bounds(0x1000, 0x2000)
                 .time_window(500, 1000)
@@ -455,21 +484,59 @@ mod tests {
             Err(RvmError::ProofInvalid)
         );
 
-        // Now insert one more to push nonce 1 out of the ring.
+        // Now insert one more to trigger watermark advancement.
         let ctx_new = ProofContextBuilder::new(PartitionId::new(1))
             .region_bounds(0x1000, 0x2000)
             .time_window(500, 1000)
-            .nonce(65)
+            .nonce(4097)
             .build();
         assert!(evaluator.evaluate_all_rules(&ctx_new).is_ok());
 
-        // Nonce 1 should now be evicted from the ring, so it can be reused.
+        // Nonce 1 should be rejected by the watermark even after eviction.
         let ctx_reuse = ProofContextBuilder::new(PartitionId::new(1))
             .region_bounds(0x1000, 0x2000)
             .time_window(500, 1000)
             .nonce(1)
             .build();
-        assert!(evaluator.evaluate_all_rules(&ctx_reuse).is_ok());
+        assert_eq!(
+            evaluator.evaluate_all_rules(&ctx_reuse),
+            Err(RvmError::ProofInvalid)
+        );
+    }
+
+    #[test]
+    fn test_nonce_watermark_rejects_old() {
+        let mut evaluator = PolicyEvaluator::new();
+
+        // Fill the ring with nonces 100..100+4096, then one more to
+        // trigger watermark. Nonces below the watermark are rejected.
+        for i in 100..100 + 4096u64 {
+            let ctx = ProofContextBuilder::new(PartitionId::new(1))
+                .region_bounds(0x1000, 0x2000)
+                .time_window(500, 1000)
+                .nonce(i)
+                .build();
+            assert!(evaluator.evaluate_all_rules(&ctx).is_ok());
+        }
+
+        // Trigger wrap.
+        let ctx_wrap = ProofContextBuilder::new(PartitionId::new(1))
+            .region_bounds(0x1000, 0x2000)
+            .time_window(500, 1000)
+            .nonce(100 + 4096)
+            .build();
+        assert!(evaluator.evaluate_all_rules(&ctx_wrap).is_ok());
+
+        // Nonce 50 (below watermark) should be rejected.
+        let ctx_old = ProofContextBuilder::new(PartitionId::new(1))
+            .region_bounds(0x1000, 0x2000)
+            .time_window(500, 1000)
+            .nonce(50)
+            .build();
+        assert_eq!(
+            evaluator.evaluate_all_rules(&ctx_old),
+            Err(RvmError::ProofInvalid)
+        );
     }
 
     #[test]

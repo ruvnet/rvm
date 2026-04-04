@@ -51,6 +51,8 @@ mod modes;
 mod per_cpu;
 mod priority;
 mod scheduler;
+mod smp;
+mod switch;
 
 pub use degraded::{DegradedReason, DegradedState};
 pub use epoch::{EpochSummary, EpochTracker};
@@ -58,6 +60,8 @@ pub use modes::SchedulerMode;
 pub use per_cpu::PerCpuScheduler;
 pub use priority::compute_priority;
 pub use scheduler::Scheduler;
+pub use smp::{CpuState, SmpCoordinator};
+pub use switch::{SwitchContext, partition_switch};
 
 // Re-export commonly used types.
 pub use rvm_types::{CoherenceScore, CutPressure, PartitionId, RvmError, RvmResult};

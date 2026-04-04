@@ -13,6 +13,9 @@ rvm-cap = { workspace = true }
 rvm-witness = { workspace = true }
 rvm-sched = { workspace = true }
 rvm-coherence = { workspace = true }
+rvm-memory = { workspace = true }
+rvm-proof = { workspace = true }
+rvm-security = { workspace = true }
 criterion = { workspace = true }
 
 [[bench]]
@@ -21,4 +24,8 @@ harness = false
 
 [[bench]]
 name = "witness"
+harness = false
+
+[[bench]]
+name = "rvm_bench"
 harness = false
