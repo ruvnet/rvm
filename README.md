@@ -1,4 +1,4 @@
-# RVM — Coherence-Native Microhypervisor
+# RVM — The Virtual Machine Built for the Agentic Age
 
 [![Rust](https://img.shields.io/badge/Rust-1.77+-orange.svg)](https://www.rust-lang.org)
 [![no_std](https://img.shields.io/badge/no__std-compatible-green.svg)](https://doc.rust-lang.org/reference/names/preludes.html)
@@ -6,32 +6,51 @@
 [![ADR](https://img.shields.io/badge/ADRs-132--140-purple.svg)](../../docs/adr/)
 [![EPIC](https://img.shields.io/badge/EPIC-ruvnet%2FRuVector%23328-brightgreen.svg)](https://github.com/ruvnet/RuVector/issues/328)
 
-### **The first hypervisor where structure determines execution — not the other way around.**
+### **Agents don't fit in VMs. They need something that understands how they think.**
 
 > Part of the [RuVector](https://github.com/ruvnet/RuVector) ecosystem. Uses [RuVix](../../crates/ruvix/) kernel primitives and [RVF](../../crates/rvf/) package format. Designed for [Cognitum](https://cognitum.one) Seed, Appliance, and future chip targets.
 
-RVM is **not** a traditional virtual machine monitor. It has no BIOS emulation,
-no virtual device model, and no UEFI firmware. Instead, RVM manages
-**partitions** — lightweight isolation boundaries whose scheduling priority,
-memory placement, and lifecycle are driven by a first-class **coherence** signal
-derived from Integrated Information Theory (IIT) Phi metrics.
+Traditional hypervisors were built for an era of static server workloads —
+long-running VMs with predictable resource needs. AI agents are different.
+They spawn in milliseconds, communicate in dense, shifting graphs, share
+context across trust boundaries, and die without warning. VMs are the wrong
+abstraction.
+
+RVM replaces VMs with **coherence domains** — lightweight, graph-structured
+partitions whose isolation, scheduling, and memory placement are driven by how
+agents actually communicate. When two agents start talking more, RVM moves
+them closer. When trust drops, RVM splits them apart. Every mutation is
+proof-gated. Every action is witnessed. The system *understands* its own
+structure.
 
 ```
-Your workload graph → [RVM Coherence Engine] → Placement Decision → Witness Proof
-                           ↑                                            │
-                           └──── Graph Pressure Signal ────────────────┘
-                                 (< 50µs per epoch)
+Agent swarm → [RVM Coherence Engine] → Optimal Placement → Witness Proof
+                    ↑                                            │
+                    └──── Agent Communication Graph ────────────┘
+                          (< 50µs adaptive re-partitioning)
 ```
 
-**No KVM. No Linux. No VMs. Bare-metal Rust.**
+**No KVM. No Linux. No VMs. Bare-metal Rust. Built for agents.**
 
 ```
-Traditional Hypervisor:    VM₁  VM₂  VM₃  VM₄    (static, opaque boxes)
-                           ─────────────────────
-RVM:                       ┌─A──B─┐  ┌─C─┐  D    (dynamic, graph-partitioned domains)
-                           │  ↔   │──│ ↔ │──↔    (edges = communication weight)
-                           └──────┘  └───┘        (cut here when pressure rises)
+Traditional VM:     VM₁  VM₂  VM₃  VM₄    (static, opaque boxes — agents don't fit)
+                    ─────────────────────
+RVM:                ┌─A──B─┐  ┌─C─┐  D    (dynamic, agent-driven domains)
+                    │  ↔   │──│ ↔ │──↔    (edges = agent communication weight)
+                    └──────┘  └───┘        (auto-split when trust or coupling changes)
 ```
+
+### What Agents Need vs What They Get
+
+| What Agents Need | VMs / Containers | RVM |
+|-----------------|-----------------|-----|
+| Sub-millisecond spawn | Seconds to boot | < 10µs partition switch |
+| Dense, shifting comms graph | Static NIC-to-NIC | Graph-weighted CommEdges, auto-rebalanced |
+| Shared context with isolation | All or nothing | Capability-gated shared memory, proof-checked |
+| Per-agent fault containment | Whole-VM crash | F1–F4 graduated rollback, no reboot needed |
+| Auditable every action | External log bolted on | 64-byte witness on every syscall, hash-chained |
+| Hibernate and reconstruct | Kill and restart | Dormant tier → rebuilt from witness log |
+| Run on 64KB MCUs | Needs gigabytes | Seed profile: 64KB–1MB, capability-enforced |
 
 ---
 

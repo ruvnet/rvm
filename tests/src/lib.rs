@@ -161,15 +161,16 @@ mod tests {
 
     #[test]
     fn witness_emitter_builds_records() {
-        let mut emitter = rvm_witness::WitnessEmitter::new();
-        let record = emitter.emit(
-            ActionKind::PartitionCreate,
-            1,     // actor_partition_id
-            100,   // target_object_id
+        let log = rvm_witness::WitnessLog::<16>::new();
+        let emitter = rvm_witness::WitnessEmitter::new(&log);
+        let seq = emitter.emit_partition_create(
+            1,         // actor_partition_id
+            100,       // new_partition_id
+            0xABCD,    // cap_hash
             1_000_000, // timestamp_ns
         );
-        assert_eq!(record.action_kind, ActionKind::PartitionCreate as u8);
-        assert_eq!(record.actor_partition_id, 1);
+        assert_eq!(seq, 0);
+        assert_eq!(log.len(), 1);
     }
 
     #[test]
