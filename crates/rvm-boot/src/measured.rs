@@ -1,9 +1,14 @@
-//! Measured boot — hash-chain accumulation for attestation.
+//! Measured boot -- hash-chain accumulation for attestation (ADR-142).
 //!
 //! Each boot phase extends the measurement state by chaining the
 //! phase's output hash into a running accumulator. The final digest
 //! serves as the platform attestation root.
+//!
+//! When the `crypto-sha256` feature is enabled (default), SHA-256 is
+//! used for the measurement extension. When disabled, the legacy FNV-1a
+//! overlapping-window scheme is used instead.
 
+#[cfg(not(feature = "crypto-sha256"))]
 use rvm_types::fnv1a_64;
 
 use crate::sequence::BootStage;
@@ -15,7 +20,7 @@ use crate::sequence::BootStage;
 /// attestation digest for the entire boot sequence.
 #[derive(Debug)]
 pub struct MeasuredBootState {
-    /// Running accumulator: SHA-256-style chain using FNV-1a for `no_std`.
+    /// Running accumulator: SHA-256 chain (or FNV-1a fallback) for `no_std`.
     accumulator: [u8; 32],
     /// Number of measurements extended so far.
     measurement_count: u32,
@@ -34,10 +39,32 @@ impl MeasuredBootState {
         }
     }
 
-    /// Extend the measurement chain with a phase's output hash.
+    /// Extend the measurement chain with a phase's output hash using SHA-256.
     ///
-    /// The new accumulator is `hash(accumulator || phase_index || hash_bytes)`,
-    /// using FNV-1a as a lightweight chaining primitive suitable for `no_std`.
+    /// The new accumulator is `SHA-256(accumulator || phase_index || hash_bytes)`.
+    #[cfg(feature = "crypto-sha256")]
+    pub fn extend_measurement(&mut self, phase: BootStage, hash_bytes: &[u8; 32]) {
+        use sha2::{Sha256, Digest};
+
+        let idx = phase as usize;
+        self.phase_hashes[idx] = *hash_bytes;
+
+        let mut hasher = Sha256::new();
+        hasher.update(self.accumulator);
+        hasher.update([idx as u8]);
+        hasher.update(hash_bytes);
+        let digest = hasher.finalize();
+
+        self.accumulator.copy_from_slice(&digest);
+        self.measurement_count += 1;
+    }
+
+    /// Extend the measurement chain with a phase's output hash using FNV-1a
+    /// (legacy fallback when `crypto-sha256` is disabled).
+    ///
+    /// The new accumulator is computed from overlapping FNV-1a windows over
+    /// `accumulator || phase_index || hash_bytes`.
+    #[cfg(not(feature = "crypto-sha256"))]
     pub fn extend_measurement(&mut self, phase: BootStage, hash_bytes: &[u8; 32]) {
         let idx = phase as usize;
         self.phase_hashes[idx] = *hash_bytes;
@@ -48,7 +75,7 @@ impl MeasuredBootState {
         input[32] = idx as u8;
         input[33..65].copy_from_slice(hash_bytes);
 
-        // Chain using two FNV-1a passes to fill 32 bytes
+        // Chain using four FNV-1a passes to fill 32 bytes
         let h0 = fnv1a_64(&input);
         let h1 = fnv1a_64(&input[8..]);
         let h2 = fnv1a_64(&input[16..]);

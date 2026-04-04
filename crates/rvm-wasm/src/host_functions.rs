@@ -95,15 +95,85 @@ impl HostCallArgs {
     }
 }
 
+/// Trait for host-side operations that WASM agents delegate to the kernel.
+///
+/// Implement this trait to connect host function dispatch to real kernel
+/// subsystems (IPC, memory allocator, scheduler). The default implementation
+/// provides the stub behaviour used in testing.
+pub trait HostContext {
+    /// Send `length` bytes to the target partition.
+    ///
+    /// `arg0` = target partition ID, `arg1` = length, `arg2` = reserved.
+    /// Returns the number of bytes accepted.
+    fn send(&mut self, sender: AgentId, target: u64, length: u64) -> RvmResult<u64> {
+        let _ = (sender, target);
+        Ok(length) // stub: accept all
+    }
+
+    /// Receive a pending message.
+    ///
+    /// Returns the message length, or 0 if no message is pending.
+    fn receive(&mut self, receiver: AgentId) -> RvmResult<u64> {
+        let _ = receiver;
+        Ok(0) // stub: no messages
+    }
+
+    /// Allocate `pages` of linear memory.
+    ///
+    /// Returns the base address of the allocation.
+    fn alloc(&mut self, agent: AgentId, pages: u64) -> RvmResult<u64> {
+        let _ = agent;
+        if pages == 0 || pages > 65536 {
+            Err(RvmError::ResourceLimitExceeded)
+        } else {
+            Ok(pages) // stub: return page count as acknowledgement
+        }
+    }
+
+    /// Free previously allocated memory at `base`.
+    fn free(&mut self, agent: AgentId, base: u64) -> RvmResult<u64> {
+        let _ = (agent, base);
+        Ok(0) // stub: always succeed
+    }
+
+    /// Spawn a child agent with the given badge.
+    ///
+    /// Returns the new agent's ID.
+    fn spawn(&mut self, parent: AgentId, badge: u64) -> RvmResult<u64> {
+        let _ = parent;
+        Ok(badge) // stub: return badge
+    }
+
+    /// Yield the current quantum.
+    fn yield_quantum(&mut self, agent: AgentId) -> RvmResult<u64> {
+        let _ = agent;
+        Ok(0)
+    }
+
+    /// Read the monotonic timer in nanoseconds.
+    fn get_time(&self) -> u64 {
+        0 // stub: no real timer
+    }
+}
+
+/// Default stub host context for testing.
+pub struct StubHostContext;
+
+impl HostContext for StubHostContext {}
+
 /// Dispatch a host function call from a WASM agent.
 ///
 /// Performs capability checking before dispatching to the handler.
 /// Returns an error if the agent lacks the required rights.
-pub fn dispatch_host_call(
+///
+/// Use `StubHostContext` for testing, or implement `HostContext` on your
+/// kernel struct to connect to real subsystems.
+pub fn dispatch_host_call<H: HostContext>(
     agent_id: AgentId,
     function: HostFunction,
     args: &HostCallArgs,
     token: &CapToken,
+    ctx: &mut H,
 ) -> HostCallResult {
     // Capability check: verify the caller holds the required rights.
     let required = function.required_rights();
@@ -111,40 +181,48 @@ pub fn dispatch_host_call(
         return HostCallResult::Error(RvmError::InsufficientCapability);
     }
 
-    // Dispatch to the appropriate stub handler.
+    // Dispatch to the host context handler.
     match function {
         HostFunction::GetId => HostCallResult::Success(agent_id.as_u32() as u64),
-        HostFunction::GetTime => {
-            // Stub: return arg0 as a mock timestamp.
-            HostCallResult::Success(args.arg0)
-        }
-        HostFunction::Yield => HostCallResult::Success(0),
-        HostFunction::Alloc => {
-            let pages = args.arg0;
-            if pages == 0 || pages > 65536 {
-                HostCallResult::Error(RvmError::ResourceLimitExceeded)
-            } else {
-                // Stub: return the page count as acknowledgement.
-                HostCallResult::Success(pages)
-            }
-        }
-        HostFunction::Free => {
-            // Stub: always succeed.
-            HostCallResult::Success(0)
-        }
-        HostFunction::Send => {
-            // Stub: return bytes sent (arg1 = length).
-            HostCallResult::Success(args.arg1)
-        }
-        HostFunction::Receive => {
-            // Stub: no messages pending.
-            HostCallResult::Success(0)
-        }
-        HostFunction::Spawn => {
-            // Stub: return the badge of the spawned agent.
-            HostCallResult::Success(args.arg0)
-        }
+        HostFunction::GetTime => HostCallResult::Success(ctx.get_time()),
+        HostFunction::Yield => match ctx.yield_quantum(agent_id) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
+        HostFunction::Alloc => match ctx.alloc(agent_id, args.arg0) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
+        HostFunction::Free => match ctx.free(agent_id, args.arg0) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
+        HostFunction::Send => match ctx.send(agent_id, args.arg0, args.arg1) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
+        HostFunction::Receive => match ctx.receive(agent_id) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
+        HostFunction::Spawn => match ctx.spawn(agent_id, args.arg0) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
     }
+}
+
+/// Convenience: dispatch with the default stub context.
+///
+/// Retained for backward compatibility with tests that don't need
+/// a real host context.
+pub fn dispatch_host_call_stub(
+    agent_id: AgentId,
+    function: HostFunction,
+    args: &HostCallArgs,
+    token: &CapToken,
+) -> HostCallResult {
+    dispatch_host_call(agent_id, function, args, token, &mut StubHostContext)
 }
 
 #[cfg(test)]
@@ -166,7 +244,7 @@ mod tests {
     fn test_get_id() {
         let agent = AgentId::from_badge(42);
         let token = make_token(all_rights());
-        let result = dispatch_host_call(agent, HostFunction::GetId, &HostCallArgs::empty(), &token);
+        let result = dispatch_host_call_stub(agent, HostFunction::GetId, &HostCallArgs::empty(), &token);
         assert_eq!(result, HostCallResult::Success(42));
     }
 
@@ -174,7 +252,7 @@ mod tests {
     fn test_capability_check_fails() {
         let agent = AgentId::from_badge(1);
         let token = make_token(CapRights::READ); // No WRITE
-        let result = dispatch_host_call(
+        let result = dispatch_host_call_stub(
             agent,
             HostFunction::Send,
             &HostCallArgs::empty(),
@@ -188,7 +266,7 @@ mod tests {
         let agent = AgentId::from_badge(1);
         let token = make_token(all_rights());
         let args = HostCallArgs { arg0: 0, arg1: 0, arg2: 0 };
-        let result = dispatch_host_call(agent, HostFunction::Alloc, &args, &token);
+        let result = dispatch_host_call_stub(agent, HostFunction::Alloc, &args, &token);
         assert_eq!(result, HostCallResult::Error(RvmError::ResourceLimitExceeded));
     }
 
@@ -197,7 +275,7 @@ mod tests {
         let agent = AgentId::from_badge(1);
         let token = make_token(all_rights());
         let args = HostCallArgs { arg0: 4, arg1: 0, arg2: 0 };
-        let result = dispatch_host_call(agent, HostFunction::Alloc, &args, &token);
+        let result = dispatch_host_call_stub(agent, HostFunction::Alloc, &args, &token);
         assert_eq!(result, HostCallResult::Success(4));
     }
 
@@ -205,8 +283,31 @@ mod tests {
     fn test_yield_readonly() {
         let agent = AgentId::from_badge(1);
         let token = make_token(CapRights::READ);
-        let result = dispatch_host_call(agent, HostFunction::Yield, &HostCallArgs::empty(), &token);
+        let result = dispatch_host_call_stub(agent, HostFunction::Yield, &HostCallArgs::empty(), &token);
         assert!(result.is_success());
+    }
+
+    #[test]
+    fn test_custom_host_context() {
+        struct CountingCtx { send_count: u64 }
+        impl HostContext for CountingCtx {
+            fn send(&mut self, _: AgentId, _: u64, length: u64) -> RvmResult<u64> {
+                self.send_count += 1;
+                Ok(length)
+            }
+        }
+
+        let agent = AgentId::from_badge(1);
+        let token = make_token(all_rights());
+        let mut ctx = CountingCtx { send_count: 0 };
+        let args = HostCallArgs { arg0: 2, arg1: 100, arg2: 0 };
+
+        let result = dispatch_host_call(agent, HostFunction::Send, &args, &token, &mut ctx);
+        assert_eq!(result, HostCallResult::Success(100));
+        assert_eq!(ctx.send_count, 1);
+
+        dispatch_host_call(agent, HostFunction::Send, &args, &token, &mut ctx);
+        assert_eq!(ctx.send_count, 2);
     }
 
     #[test]

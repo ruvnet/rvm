@@ -59,6 +59,10 @@ pub struct BuddyAllocator<const TOTAL_PAGES: usize, const BITMAP_WORDS: usize> {
     base: PhysAddr,
     /// Bitmap: bit set = block is free.
     bitmap: [u64; BITMAP_WORDS],
+    /// Pre-computed cumulative bit offsets per order level.
+    /// `bit_offsets[k]` = sum of `TOTAL_PAGES >> i` for i in 0..k.
+    /// Replaces the O(order) loop in `bit_offset()` with O(1) lookup.
+    bit_offsets: [usize; MAX_ORDER + 1],
 }
 
 impl<const TOTAL_PAGES: usize, const BITMAP_WORDS: usize>
@@ -84,9 +88,20 @@ impl<const TOTAL_PAGES: usize, const BITMAP_WORDS: usize>
             return Err(RvmError::ResourceLimitExceeded);
         }
 
+        // Pre-compute cumulative bit offsets for each order level.
+        let mut bit_offsets = [0usize; MAX_ORDER + 1];
+        let mut cumulative = 0;
+        let mut o = 0;
+        while o <= MAX_ORDER {
+            bit_offsets[o] = cumulative;
+            cumulative += TOTAL_PAGES >> o;
+            o += 1;
+        }
+
         let mut alloc = Self {
             base,
             bitmap: [0u64; BITMAP_WORDS],
+            bit_offsets,
         };
         alloc.init_free_all();
         Ok(alloc)
@@ -124,6 +139,9 @@ impl<const TOTAL_PAGES: usize, const BITMAP_WORDS: usize>
     ///
     /// Returns the base `PhysAddr` of the allocated block.
     ///
+    /// Uses `trailing_zeros` on bitmap words for fast first-free-block
+    /// scanning: O(1) per 64-bit word instead of checking bit-by-bit.
+    ///
     /// # Errors
     ///
     /// Returns [`RvmError::OutOfMemory`] if no block of the requested size
@@ -133,30 +151,18 @@ impl<const TOTAL_PAGES: usize, const BITMAP_WORDS: usize>
             return Err(RvmError::OutOfMemory);
         }
 
-        // Try to find a free block at this order.
-        let block_count = TOTAL_PAGES >> order;
-        for blk in 0..block_count {
-            if self.is_free(order, blk) {
-                self.clear_free(order, blk);
-                let page_offset = blk << order;
-                let addr = self.base.as_u64() + (page_offset as u64 * PAGE_SIZE as u64);
-                return Ok(PhysAddr::new(addr));
-            }
+        // Try to find a free block at this order using trailing_zeros scan.
+        if let Some(blk) = self.find_first_free(order) {
+            self.clear_free(order, blk);
+            let page_offset = blk << order;
+            let addr = self.base.as_u64() + (page_offset as u64 * PAGE_SIZE as u64);
+            return Ok(PhysAddr::new(addr));
         }
 
         // No free block at this order -- try to split a higher-order block.
         let mut split_order = order + 1;
         while split_order <= Self::max_usable_order() {
-            let block_count_at_split = TOTAL_PAGES >> split_order;
-            let mut found = None;
-            for blk in 0..block_count_at_split {
-                if self.is_free(split_order, blk) {
-                    found = Some(blk);
-                    break;
-                }
-            }
-
-            if let Some(blk) = found {
+            if let Some(blk) = self.find_first_free(split_order) {
                 // Remove the block from the higher order.
                 self.clear_free(split_order, blk);
 
@@ -300,20 +306,70 @@ impl<const TOTAL_PAGES: usize, const BITMAP_WORDS: usize>
 
     // --- Bitmap helpers ---
 
-    /// Compute the bit offset for block `blk` at `order`.
-    fn bit_offset(order: usize, blk: usize) -> usize {
-        let mut offset = 0;
-        let mut o = 0;
-        while o < order {
-            offset += TOTAL_PAGES >> o;
-            o += 1;
+    /// Find the first free block at the given order using `trailing_zeros`
+    /// on bitmap words for O(1) per 64-bit word scanning.
+    ///
+    /// Returns the block index, or `None` if no free block exists.
+    fn find_first_free(&self, order: usize) -> Option<usize> {
+        let block_count = TOTAL_PAGES >> order;
+        if block_count == 0 {
+            return None;
         }
-        offset + blk
+        let base_bit = self.bit_offsets[order];
+        let start_word = base_bit / 64;
+        let start_bit_in_word = base_bit % 64;
+
+        // Total bits to scan for this order level.
+        let mut remaining = block_count;
+        let mut word_idx = start_word;
+        let mut bit_offset_in_level = 0usize;
+
+        // Handle the first (potentially partial) word.
+        if start_bit_in_word != 0 && word_idx < BITMAP_WORDS {
+            // Mask off bits below our start position in this word.
+            let mask = self.bitmap[word_idx] >> start_bit_in_word;
+            if mask != 0 {
+                let tz = mask.trailing_zeros() as usize;
+                if tz < remaining && (start_bit_in_word + tz) < 64 {
+                    return Some(tz);
+                }
+            }
+            let bits_in_first_word = 64 - start_bit_in_word;
+            let consumed = bits_in_first_word.min(remaining);
+            remaining = remaining.saturating_sub(consumed);
+            bit_offset_in_level += consumed;
+            word_idx += 1;
+        }
+
+        // Scan full 64-bit words using trailing_zeros.
+        while remaining > 0 && word_idx < BITMAP_WORDS {
+            let word = self.bitmap[word_idx];
+            if word != 0 {
+                let tz = word.trailing_zeros() as usize;
+                if tz < remaining.min(64) {
+                    return Some(bit_offset_in_level + tz);
+                }
+            }
+            let consumed = remaining.min(64);
+            remaining -= consumed;
+            bit_offset_in_level += consumed;
+            word_idx += 1;
+        }
+
+        None
+    }
+
+    /// Compute the bit offset for block `blk` at `order`.
+    /// Uses the pre-computed LUT for O(1) instead of O(order) loop.
+    #[inline]
+    fn bit_offset(&self, order: usize, blk: usize) -> usize {
+        self.bit_offsets[order] + blk
     }
 
     /// Check if a block is marked as free in the bitmap.
+    #[inline]
     fn is_free(&self, order: usize, blk: usize) -> bool {
-        let bit = Self::bit_offset(order, blk);
+        let bit = self.bit_offset(order, blk);
         let word = bit / 64;
         let bit_in_word = bit % 64;
         if word >= BITMAP_WORDS {
@@ -323,8 +379,9 @@ impl<const TOTAL_PAGES: usize, const BITMAP_WORDS: usize>
     }
 
     /// Mark a block as free in the bitmap.
+    #[inline]
     fn set_free(&mut self, order: usize, blk: usize) {
-        let bit = Self::bit_offset(order, blk);
+        let bit = self.bit_offset(order, blk);
         let word = bit / 64;
         let bit_in_word = bit % 64;
         if word < BITMAP_WORDS {
@@ -333,8 +390,9 @@ impl<const TOTAL_PAGES: usize, const BITMAP_WORDS: usize>
     }
 
     /// Mark a block as allocated (not free) in the bitmap.
+    #[inline]
     fn clear_free(&mut self, order: usize, blk: usize) {
-        let bit = Self::bit_offset(order, blk);
+        let bit = self.bit_offset(order, blk);
         let word = bit / 64;
         let bit_in_word = bit % 64;
         if word < BITMAP_WORDS {

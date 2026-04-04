@@ -4,7 +4,11 @@ use crate::modes::SchedulerMode;
 use rvm_types::PartitionId;
 
 /// Per-CPU scheduler state.
+///
+/// Cache-line aligned (`align(64)`) to prevent false sharing between
+/// CPUs when each has its own `PerCpuScheduler` in a contiguous array.
 #[derive(Debug, Clone, Copy)]
+#[repr(C, align(64))]
 pub struct PerCpuScheduler {
     /// CPU index.
     pub cpu_id: u16,

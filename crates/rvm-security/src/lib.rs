@@ -43,7 +43,10 @@ use rvm_types::{CapRights, CapToken, CapType, RvmError, RvmResult, WitnessHash};
 // Re-export key types for convenience.
 pub use attestation::{AttestationChain, AttestationReport, verify_attestation};
 pub use budget::{DmaBudget, ResourceQuota};
-pub use gate::{GateRequest, GateResponse, SecurityError, SecurityGate};
+pub use gate::{
+    GateRequest, GateResponse, P3WitnessChain, SecurityError, SecurityGate,
+    SignedSecurityGate,
+};
 
 /// The result of a security policy decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +71,11 @@ pub struct PolicyRequest<'a> {
     pub required_rights: CapRights,
     /// Optional proof commitment (required for state-mutating operations).
     pub proof_commitment: Option<&'a WitnessHash>,
+    /// Optional current epoch for staleness check.
+    ///
+    /// If provided, the token's epoch must match. This catches stale
+    /// capabilities that survived revocation by epoch rotation.
+    pub current_epoch: Option<u32>,
 }
 
 /// Evaluate a policy request against the security policy.
@@ -80,6 +88,13 @@ pub struct PolicyRequest<'a> {
 /// [`SecurityGate::check_and_execute`] instead.
 #[must_use]
 pub fn evaluate(request: &PolicyRequest<'_>) -> PolicyDecision {
+    // Stage 0: Epoch freshness check (if requested).
+    if let Some(epoch) = request.current_epoch {
+        if request.token.epoch() != epoch {
+            return PolicyDecision::Deny(RvmError::InsufficientCapability);
+        }
+    }
+
     // Stage 1: Capability type check.
     if request.token.cap_type() != request.required_type {
         return PolicyDecision::Deny(RvmError::CapabilityTypeMismatch);

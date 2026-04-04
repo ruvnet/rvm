@@ -55,8 +55,12 @@ pub use replay::{
     ChainIntegrityError, verify_chain, query_by_partition, query_by_action_kind,
     query_by_time_range,
 };
+#[cfg(any(test, feature = "null-signer"))]
 #[allow(deprecated)]
-pub use signer::{NullSigner, StrictSigner, WitnessSigner, default_signer};
+pub use signer::NullSigner;
+pub use signer::{DefaultSigner, StrictSigner, WitnessSigner, default_signer};
+#[cfg(feature = "crypto-sha256")]
+pub use signer::{HmacWitnessSigner, record_to_digest};
 
 /// Default ring buffer capacity: 262,144 records (16 MB / 64 bytes).
 pub const DEFAULT_RING_CAPACITY: usize = 262_144;

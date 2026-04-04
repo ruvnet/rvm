@@ -15,12 +15,16 @@ crate-type = ["rlib"]
 
 [dependencies]
 rvm-types = { workspace = true }
+hmac = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 spin = { workspace = true, features = ["mutex", "spin_mutex"] }
 
 [dev-dependencies]
 
 [features]
-default = []
+default = ["strict-signing", "crypto-sha256"]
 std = ["rvm-types/std"]
 alloc = ["rvm-types/alloc"]
 strict-signing = []
+null-signer = []
+crypto-sha256 = ["dep:sha2", "dep:hmac"]

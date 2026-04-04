@@ -55,6 +55,8 @@ extern crate alloc;
 extern crate std;
 
 pub mod adaptive;
+pub mod bridge;
+pub mod engine;
 pub mod graph;
 pub mod mincut;
 pub mod pressure;
@@ -64,12 +66,17 @@ use rvm_types::{CoherenceScore, PartitionId, PhiValue};
 
 // Re-exports for convenience.
 pub use adaptive::AdaptiveCoherenceEngine;
+pub use bridge::{CoherenceBackend, MinCutBackend};
+pub use engine::{CoherenceDecision, CoherenceEngine, DefaultCoherenceEngine};
 pub use graph::{CoherenceGraph, GraphError, NeighborIter};
 pub use mincut::{MinCutBridge, MinCutResult};
 pub use pressure::{
     MergeSignal, PressureResult, MERGE_COHERENCE_THRESHOLD_BP, SPLIT_THRESHOLD_BP,
 };
 pub use scoring::{PartitionCoherenceResult, compute_coherence_score, recompute_all_scores};
+
+#[cfg(feature = "ruvector")]
+pub use engine::RuVectorCoherenceEngine;
 
 /// A raw sensor reading fed into the coherence pipeline.
 #[derive(Debug, Clone, Copy)]
@@ -100,11 +107,14 @@ impl EmaFilter {
     /// Create a new EMA filter with the given smoothing factor.
     ///
     /// `alpha_bp` is in basis points: 1000 = 10%, 5000 = 50%.
+    /// Values above 10_000 are clamped to 10_000 (100%).
     #[must_use]
     pub const fn new(alpha_bp: u16) -> Self {
+        // Clamp alpha_bp to the valid basis-point range [0, 10_000].
+        let clamped = if alpha_bp > 10_000 { 10_000 } else { alpha_bp };
         Self {
             current_bp: 0,
-            alpha_bp,
+            alpha_bp: clamped,
             initialized: false,
         }
     }

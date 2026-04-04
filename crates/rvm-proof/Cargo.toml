@@ -18,8 +18,16 @@ rvm-types = { workspace = true }
 rvm-cap = { workspace = true }
 rvm-witness = { workspace = true }
 spin = { workspace = true }
+sha2 = { version = "0.10", default-features = false, optional = true }
+subtle = { workspace = true }
+hmac = { version = "0.12", default-features = false, optional = true }
+ed25519-dalek = { version = "2.1", default-features = false, optional = true }
 
 [features]
-default = []
+default = ["crypto-sha256", "strict-signing"]
 std = ["rvm-types/std", "rvm-cap/std", "rvm-witness/std"]
 alloc = ["rvm-types/alloc", "rvm-cap/alloc", "rvm-witness/alloc"]
+crypto-sha256 = ["dep:sha2", "dep:hmac"]
+ed25519 = ["dep:ed25519-dalek", "crypto-sha256"]
+null-signer = []
+strict-signing = []

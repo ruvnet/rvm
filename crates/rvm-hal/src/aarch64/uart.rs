@@ -58,6 +58,14 @@ const LCR_FEN: u32 = 1 << 4;
 /// 8-bit word length (WLEN = 0b11).
 const LCR_WLEN_8: u32 = 3 << 5;
 
+/// Maximum number of iterations to spin waiting for the TX FIFO.
+///
+/// If the UART hardware is wedged or the MMIO mapping is broken, an
+/// unbounded loop would hang the hypervisor. This timeout is generous
+/// enough for real hardware (PL011 drains at baud rate) while still
+/// preventing an infinite hang.
+const UART_TX_TIMEOUT: u32 = 1_000_000;
+
 /// Write a 32-bit value to a UART register.
 ///
 /// # Safety
@@ -109,8 +117,14 @@ pub unsafe fn uart_init() {
         // Disable UART before configuration.
         uart_write(UART_CR, 0);
 
-        // Wait for any pending transmission to complete.
-        while uart_read(UART_FR) & FR_BUSY != 0 {}
+        // Wait for any pending transmission to complete (bounded).
+        let mut timeout = UART_TX_TIMEOUT;
+        while uart_read(UART_FR) & FR_BUSY != 0 {
+            timeout -= 1;
+            if timeout == 0 {
+                break;
+            }
+        }
 
         // Mask all interrupts (we poll, not interrupt-driven at boot).
         uart_write(UART_IMSC, 0);
@@ -131,7 +145,9 @@ pub unsafe fn uart_init() {
 
 /// Write a single byte to the UART.
 ///
-/// Spins until the transmit FIFO has space, then writes the byte.
+/// Spins until the transmit FIFO has space (up to [`UART_TX_TIMEOUT`]
+/// iterations), then writes the byte. If the timeout is exceeded the
+/// character is silently dropped to prevent hanging the hypervisor.
 ///
 /// # Safety
 ///
@@ -139,9 +155,19 @@ pub unsafe fn uart_init() {
 /// region must be accessible.
 pub unsafe fn uart_putc(c: u8) {
     // SAFETY: UART is initialized and MMIO region is accessible.
-    // We spin-wait on the flag register until TX FIFO is not full.
+    // We spin-wait on the flag register until TX FIFO is not full,
+    // bounded by UART_TX_TIMEOUT to prevent infinite hangs if the
+    // hardware is unresponsive.
     unsafe {
-        while uart_read(UART_FR) & FR_TXFF != 0 {}
+        let mut timeout = UART_TX_TIMEOUT;
+        while uart_read(UART_FR) & FR_TXFF != 0 {
+            timeout -= 1;
+            if timeout == 0 {
+                // Hardware is not draining -- drop the character
+                // rather than hanging the hypervisor.
+                return;
+            }
+        }
         uart_write(UART_DR, c as u32);
     }
 }

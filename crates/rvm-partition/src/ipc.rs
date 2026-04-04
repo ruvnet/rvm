@@ -49,9 +49,18 @@ pub struct MessageQueue<const CAPACITY: usize> {
 const EMPTY_MSG: Option<IpcMessage> = None;
 
 impl<const CAPACITY: usize> MessageQueue<CAPACITY> {
+    /// Const assertion: CAPACITY must be a power of two and non-zero.
+    /// This enables efficient `& (CAPACITY - 1)` index wrapping.
+    const _CAPACITY_IS_POWER_OF_TWO: () = assert!(
+        CAPACITY > 0 && (CAPACITY & (CAPACITY - 1)) == 0,
+        "MessageQueue CAPACITY must be a non-zero power of two"
+    );
+
     /// Create a new empty message queue.
     #[must_use]
     pub fn new() -> Self {
+        // Ensure the const assertion is evaluated.
+        let _ = Self::_CAPACITY_IS_POWER_OF_TWO;
         Self {
             buffer: [EMPTY_MSG; CAPACITY],
             head: 0,
@@ -65,23 +74,25 @@ impl<const CAPACITY: usize> MessageQueue<CAPACITY> {
     /// # Errors
     ///
     /// Returns [`RvmError::ResourceLimitExceeded`] if the queue is full.
+    #[inline]
     pub fn send(&mut self, msg: IpcMessage) -> RvmResult<()> {
         if self.count >= CAPACITY {
             return Err(RvmError::ResourceLimitExceeded);
         }
         self.buffer[self.tail] = Some(msg);
-        self.tail = (self.tail + 1) % CAPACITY;
+        self.tail = (self.tail + 1) & (CAPACITY - 1);
         self.count += 1;
         Ok(())
     }
 
     /// Dequeue a message, returning `None` if the queue is empty.
+    #[inline]
     pub fn receive(&mut self) -> Option<IpcMessage> {
         if self.count == 0 {
             return None;
         }
         let msg = self.buffer[self.head].take();
-        self.head = (self.head + 1) % CAPACITY;
+        self.head = (self.head + 1) & (CAPACITY - 1);
         self.count -= 1;
         msg
     }
@@ -118,6 +129,9 @@ impl<const CAPACITY: usize> Default for MessageQueue<CAPACITY> {
 pub struct IpcManager<const MAX_EDGES: usize, const QUEUE_SIZE: usize> {
     /// Per-edge message queues.
     queues: [Option<ChannelMeta<QUEUE_SIZE>>; MAX_EDGES],
+    /// Hash-based index: maps `edge_id % MAX_EDGES` to the slot index.
+    /// Enables O(1) lookup instead of linear scan.
+    edge_index: [Option<usize>; MAX_EDGES],
     /// Number of active channels.
     edge_count: usize,
     /// Next edge ID to assign.
@@ -127,7 +141,6 @@ pub struct IpcManager<const MAX_EDGES: usize, const QUEUE_SIZE: usize> {
 /// Metadata for an active IPC channel.
 struct ChannelMeta<const QUEUE_SIZE: usize> {
     edge_id: CommEdgeId,
-    #[allow(dead_code)]
     source: PartitionId,
     #[allow(dead_code)]
     dest: PartitionId,
@@ -155,6 +168,7 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
         }
         Self {
             queues,
+            edge_index: [None; MAX_EDGES],
             edge_count: 0,
             next_edge_id: 1,
         }
@@ -176,7 +190,7 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
         let edge_id = CommEdgeId::new(self.next_edge_id);
         self.next_edge_id += 1;
 
-        for slot in &mut self.queues {
+        for (i, slot) in self.queues.iter_mut().enumerate() {
             if slot.is_none() {
                 *slot = Some(ChannelMeta {
                     edge_id,
@@ -186,21 +200,59 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
                     weight: 0,
                 });
                 self.edge_count += 1;
+                // Populate the hash index for O(1) lookup.
+                let hash_slot = (edge_id.as_u64() as usize) % MAX_EDGES;
+                self.edge_index[hash_slot] = Some(i);
                 return Ok(edge_id);
             }
         }
         Err(RvmError::InternalError)
     }
 
-    /// Send a message on an existing channel.
+    /// Send a message on an existing channel with caller verification.
+    ///
+    /// `caller_id` identifies the partition performing the send. The method
+    /// verifies that `msg.sender == caller_id` and that the caller is the
+    /// **source** endpoint of the channel to prevent identity spoofing and
+    /// unauthorized channel use.
     ///
     /// Increments the edge weight for coherence scoring on success.
     ///
     /// # Errors
     ///
+    /// Returns [`RvmError::InsufficientCapability`] if `msg.sender` does
+    /// not match `caller_id`, or the caller is not the channel source.
     /// Returns [`RvmError::PartitionNotFound`] if the edge does not exist.
     /// Returns [`RvmError::ResourceLimitExceeded`] if the queue is full.
-    pub fn send(&mut self, edge_id: CommEdgeId, msg: IpcMessage) -> RvmResult<()> {
+    pub fn send(
+        &mut self,
+        edge_id: CommEdgeId,
+        msg: IpcMessage,
+        caller_id: PartitionId,
+    ) -> RvmResult<()> {
+        // Validate that the declared sender matches the actual caller.
+        if msg.sender != caller_id {
+            return Err(RvmError::InsufficientCapability);
+        }
+
+        let channel = self.find_mut(edge_id)?;
+
+        // Validate the caller is the source of this channel.
+        if channel.source != caller_id {
+            return Err(RvmError::InsufficientCapability);
+        }
+
+        channel.queue.send(msg)?;
+        channel.weight = channel.weight.saturating_add(1);
+        Ok(())
+    }
+
+    /// Send a message without caller verification (kernel-internal use).
+    ///
+    /// The caller **must** have already validated the sender identity.
+    /// This method exists to preserve backwards compatibility for internal
+    /// callers that have already performed authorization checks.
+    pub fn send_unchecked(&mut self, edge_id: CommEdgeId, msg: IpcMessage) -> RvmResult<()> {
         let channel = self.find_mut(edge_id)?;
         channel.queue.send(msg)?;
         channel.weight = channel.weight.saturating_add(1);
@@ -223,13 +275,18 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
     ///
     /// Returns [`RvmError::PartitionNotFound`] if the edge does not exist.
     pub fn destroy_channel(&mut self, edge_id: CommEdgeId) -> RvmResult<()> {
-        for slot in &mut self.queues {
+        for (i, slot) in self.queues.iter_mut().enumerate() {
             let matches = slot
                 .as_ref()
                 .is_some_and(|ch| ch.edge_id == edge_id);
             if matches {
                 *slot = None;
                 self.edge_count -= 1;
+                // Clear the hash index entry.
+                let hash_slot = (edge_id.as_u64() as usize) % MAX_EDGES;
+                if self.edge_index[hash_slot] == Some(i) {
+                    self.edge_index[hash_slot] = None;
+                }
                 return Ok(());
             }
         }
@@ -254,7 +311,18 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
         self.edge_count
     }
 
+    #[inline]
     fn find(&self, edge_id: CommEdgeId) -> RvmResult<&ChannelMeta<QUEUE_SIZE>> {
+        // O(1) fast path via hash index.
+        let hash_slot = (edge_id.as_u64() as usize) % MAX_EDGES;
+        if let Some(idx) = self.edge_index[hash_slot] {
+            if let Some(ref ch) = self.queues[idx] {
+                if ch.edge_id == edge_id {
+                    return Ok(ch);
+                }
+            }
+        }
+        // Fallback: linear scan for hash collisions.
         for ch in self.queues.iter().flatten() {
             if ch.edge_id == edge_id {
                 return Ok(ch);
@@ -263,7 +331,19 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
         Err(RvmError::PartitionNotFound)
     }
 
+    #[inline]
     fn find_mut(&mut self, edge_id: CommEdgeId) -> RvmResult<&mut ChannelMeta<QUEUE_SIZE>> {
+        // O(1) fast path via hash index.
+        let hash_slot = (edge_id.as_u64() as usize) % MAX_EDGES;
+        if let Some(idx) = self.edge_index[hash_slot] {
+            if self.queues[idx]
+                .as_ref()
+                .is_some_and(|ch| ch.edge_id == edge_id)
+            {
+                return Ok(self.queues[idx].as_mut().unwrap());
+            }
+        }
+        // Fallback: linear scan for hash collisions.
         for ch in self.queues.iter_mut().flatten() {
             if ch.edge_id == edge_id {
                 return Ok(ch);
@@ -387,7 +467,7 @@ mod tests {
         let edge = mgr.create_channel(pid(1), pid(2)).unwrap();
 
         let msg = make_msg(1, 2, edge, 1);
-        mgr.send(edge, msg).unwrap();
+        mgr.send(edge, msg, pid(1)).unwrap();
 
         let received = mgr.receive(edge).unwrap().unwrap();
         assert_eq!(received.sequence, 1);
@@ -402,8 +482,8 @@ mod tests {
         assert_ne!(e1, e2);
         assert_eq!(mgr.channel_count(), 2);
 
-        mgr.send(e1, make_msg(1, 2, e1, 10)).unwrap();
-        mgr.send(e2, make_msg(2, 3, e2, 20)).unwrap();
+        mgr.send(e1, make_msg(1, 2, e1, 10), pid(1)).unwrap();
+        mgr.send(e2, make_msg(2, 3, e2, 20), pid(2)).unwrap();
 
         assert_eq!(mgr.receive(e1).unwrap().unwrap().sequence, 10);
         assert_eq!(mgr.receive(e2).unwrap().unwrap().sequence, 20);
@@ -432,7 +512,7 @@ mod tests {
 
         // Sending to a destroyed channel should fail.
         assert_eq!(
-            mgr.send(edge, make_msg(1, 2, edge, 1)),
+            mgr.send(edge, make_msg(1, 2, edge, 1), pid(1)),
             Err(RvmError::PartitionNotFound)
         );
     }
@@ -453,11 +533,11 @@ mod tests {
 
         assert_eq!(mgr.comm_weight(edge).unwrap(), 0);
 
-        mgr.send(edge, make_msg(1, 2, edge, 1)).unwrap();
+        mgr.send(edge, make_msg(1, 2, edge, 1), pid(1)).unwrap();
         assert_eq!(mgr.comm_weight(edge).unwrap(), 1);
 
-        mgr.send(edge, make_msg(1, 2, edge, 2)).unwrap();
-        mgr.send(edge, make_msg(1, 2, edge, 3)).unwrap();
+        mgr.send(edge, make_msg(1, 2, edge, 2), pid(1)).unwrap();
+        mgr.send(edge, make_msg(1, 2, edge, 3), pid(1)).unwrap();
         assert_eq!(mgr.comm_weight(edge).unwrap(), 3);
     }
 
@@ -501,11 +581,53 @@ mod tests {
         let mut mgr = IpcManager::<4, 2>::new();
         let edge = mgr.create_channel(pid(1), pid(2)).unwrap();
 
-        mgr.send(edge, make_msg(1, 2, edge, 1)).unwrap();
-        mgr.send(edge, make_msg(1, 2, edge, 2)).unwrap();
+        mgr.send(edge, make_msg(1, 2, edge, 1), pid(1)).unwrap();
+        mgr.send(edge, make_msg(1, 2, edge, 2), pid(1)).unwrap();
         assert_eq!(
-            mgr.send(edge, make_msg(1, 2, edge, 3)),
+            mgr.send(edge, make_msg(1, 2, edge, 3), pid(1)),
             Err(RvmError::ResourceLimitExceeded)
         );
+    }
+
+    // ---------------------------------------------------------------
+    // Security tests: sender enforcement & channel authorization
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn send_rejects_sender_mismatch() {
+        let mut mgr = IpcManager::<4, 8>::new();
+        let edge = mgr.create_channel(pid(1), pid(2)).unwrap();
+
+        // msg.sender says 1, but caller_id is 3 -- should be rejected.
+        let msg = make_msg(1, 2, edge, 1);
+        assert_eq!(
+            mgr.send(edge, msg, pid(3)),
+            Err(RvmError::InsufficientCapability)
+        );
+    }
+
+    #[test]
+    fn send_rejects_non_source_caller() {
+        let mut mgr = IpcManager::<4, 8>::new();
+        let edge = mgr.create_channel(pid(1), pid(2)).unwrap();
+
+        // msg.sender == caller_id == 2, but the channel source is 1.
+        let msg = make_msg(2, 1, edge, 1);
+        assert_eq!(
+            mgr.send(edge, msg, pid(2)),
+            Err(RvmError::InsufficientCapability)
+        );
+    }
+
+    #[test]
+    fn send_unchecked_bypasses_validation() {
+        let mut mgr = IpcManager::<4, 8>::new();
+        let edge = mgr.create_channel(pid(1), pid(2)).unwrap();
+
+        // Would fail with send() because caller is not validated, but
+        // send_unchecked is for kernel-internal paths.
+        let msg = make_msg(1, 2, edge, 1);
+        mgr.send_unchecked(edge, msg).unwrap();
+        assert_eq!(mgr.comm_weight(edge).unwrap(), 1);
     }
 }

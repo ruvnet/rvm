@@ -16,8 +16,11 @@ crate-type = ["rlib"]
 [dependencies]
 rvm-types = { workspace = true }
 rvm-witness = { workspace = true }
+sha2 = { workspace = true, optional = true }
+subtle = { workspace = true }
 
 [features]
-default = []
+default = ["crypto-sha256"]
 std = ["rvm-types/std", "rvm-witness/std"]
 alloc = ["rvm-types/alloc", "rvm-witness/alloc"]
+crypto-sha256 = ["sha2"]

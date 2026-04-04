@@ -28,9 +28,35 @@ impl PartitionId {
     pub const MAX_LOGICAL: u32 = 4096;
 
     /// Create a new partition identifier.
+    ///
+    /// # Note
+    ///
+    /// This constructor is unchecked -- callers that accept untrusted input
+    /// should use [`try_new`](Self::try_new) instead to reject reserved and
+    /// out-of-range identifiers.
     #[must_use]
     pub const fn new(id: u32) -> Self {
         Self(id)
+    }
+
+    /// Create a validated partition identifier, returning `None` for
+    /// reserved or out-of-range values.
+    ///
+    /// - Rejects `0` (reserved for the hypervisor -- use [`PartitionId::HYPERVISOR`]).
+    /// - Rejects values greater than [`MAX_LOGICAL`](Self::MAX_LOGICAL).
+    #[must_use]
+    pub const fn try_new(id: u32) -> Option<Self> {
+        if id == 0 || id > Self::MAX_LOGICAL {
+            None
+        } else {
+            Some(Self(id))
+        }
+    }
+
+    /// Return the hypervisor's reserved partition identifier.
+    #[must_use]
+    pub const fn hypervisor() -> Self {
+        Self::HYPERVISOR
     }
 
     /// Return the raw identifier value.

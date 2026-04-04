@@ -6,6 +6,18 @@ use crate::hash::compute_chain_hash;
 use rvm_types::WitnessRecord;
 use spin::Mutex;
 
+/// XOR-fold a 64-bit hash into 32 bits.
+///
+/// This preserves entropy from both halves of the hash, unlike simple
+/// truncation (`as u32`) which discards the upper 32 bits entirely.
+///
+/// `fold(h) = (h >> 32) ^ (h & 0xFFFF_FFFF)`
+#[inline]
+#[allow(clippy::cast_possible_truncation)]
+pub(crate) fn fold_u64_to_u32(h: u64) -> u32 {
+    ((h >> 32) ^ h) as u32
+}
+
 /// Append-only ring buffer of witness records.
 pub struct WitnessLog<const N: usize> {
     inner: Mutex<WitnessLogInner<N>>,
@@ -20,14 +32,24 @@ struct WitnessLogInner<const N: usize> {
 }
 
 impl<const N: usize> WitnessLog<N> {
+    /// Compile-time assertion: N must be greater than zero.
+    ///
+    /// Using a const item inside the impl block causes a compilation
+    /// error when `N == 0` because dividing by zero is a const-eval
+    /// failure. This replaces the previous `assert!(N > 0)` runtime
+    /// panic with a hard compile-time rejection.
+    const _ASSERT_N_NONZERO: () = assert!(N > 0, "witness log capacity must be > 0");
+
     /// Creates a new empty witness log.
     ///
-    /// # Panics
+    /// # Compile-time invariant
     ///
-    /// Panics if `N` is zero.
+    /// `N` must be greater than zero. Attempting to instantiate
+    /// `WitnessLog<0>` is a compile-time error.
     #[must_use]
     pub fn new() -> Self {
-        assert!(N > 0, "witness log capacity must be > 0");
+        // Reference the const to ensure the compile-time check fires.
+        let () = Self::_ASSERT_N_NONZERO;
         Self {
             inner: Mutex::new(WitnessLogInner {
                 records: [WitnessRecord::zeroed(); N],
@@ -43,23 +65,70 @@ impl<const N: usize> WitnessLog<N> {
     ///
     /// Fills `sequence`, `prev_hash`, and `record_hash`. Returns the
     /// sequence number.
-    #[allow(clippy::cast_possible_truncation)]
+    ///
+    /// # Hash truncation
+    ///
+    /// The internal chain hash is a full 64-bit FNV-1a value, but the
+    /// `WitnessRecord` fields `prev_hash` and `record_hash` are 32-bit
+    /// (constrained by the 64-byte record layout, ADR-134). We use
+    /// XOR-folding (`high32 ^ low32`) rather than simple `as u32`
+    /// truncation to preserve entropy from both halves of the hash.
+    ///
+    /// **Future migration note:** When SHA-256 is adopted (TEE ADR),
+    /// the record format should be revised to use 64-bit (or wider)
+    /// hash fields, which will require a witness format version bump.
     pub fn append(&self, mut record: WitnessRecord) -> u64 {
         let mut inner = self.inner.lock();
         let seq = inner.sequence;
         let prev_hash = inner.chain_hash;
 
         record.sequence = seq;
-        record.prev_hash = prev_hash as u32;
+        record.prev_hash = fold_u64_to_u32(prev_hash);
 
         let chain = compute_chain_hash(prev_hash, seq);
-        record.record_hash = chain as u32;
+        record.record_hash = fold_u64_to_u32(chain);
 
         let pos = inner.write_pos;
         inner.records[pos] = record;
         inner.write_pos = (pos + 1) % N;
         inner.chain_hash = chain;
-        inner.sequence = seq + 1;
+        inner.sequence = seq.wrapping_add(1);
+        inner.total_emitted += 1;
+
+        seq
+    }
+
+    /// Appends a pre-built witness record with signing (ADR-142 Phase 4).
+    ///
+    /// Like [`append`], but after filling `sequence`, `prev_hash`, and
+    /// `record_hash`, signs the fully-populated record using the provided
+    /// [`WitnessSigner`] and stores the signature in the `aux` field.
+    ///
+    /// This ensures the signature covers all fields including chain-hash
+    /// metadata, unlike signing before append.
+    pub fn signed_append<S: crate::signer::WitnessSigner>(
+        &self,
+        mut record: WitnessRecord,
+        signer: &S,
+    ) -> u64 {
+        let mut inner = self.inner.lock();
+        let seq = inner.sequence;
+        let prev_hash = inner.chain_hash;
+
+        record.sequence = seq;
+        record.prev_hash = fold_u64_to_u32(prev_hash);
+
+        let chain = compute_chain_hash(prev_hash, seq);
+        record.record_hash = fold_u64_to_u32(chain);
+
+        // Sign the fully-populated record (all chain-hash fields set).
+        record.aux = signer.sign(&record);
+
+        let pos = inner.write_pos;
+        inner.records[pos] = record;
+        inner.write_pos = (pos + 1) % N;
+        inner.chain_hash = chain;
+        inner.sequence = seq.wrapping_add(1);
         inner.total_emitted += 1;
 
         seq
@@ -194,5 +263,84 @@ mod tests {
         let log = WitnessLog::<16>::new();
         assert!(log.is_empty());
         assert_eq!(log.len(), 0);
+    }
+
+    // -- signed_append tests (ADR-142 Phase 4) -----------------------------
+
+    #[test]
+    fn test_signed_append_sets_aux() {
+        use crate::signer::{WitnessSigner, default_signer};
+
+        let log = WitnessLog::<16>::new();
+        let signer = default_signer();
+
+        let record = make_record(ActionKind::PartitionCreate, 1, 100, 1000);
+        let seq = log.signed_append(record, &signer);
+        assert_eq!(seq, 0);
+
+        let stored = log.get(0).unwrap();
+        // The aux field should be non-zero (signed).
+        assert_ne!(stored.aux, [0u8; 8]);
+    }
+
+    #[test]
+    fn test_signed_append_signature_verifiable() {
+        use crate::signer::{WitnessSigner, default_signer};
+
+        let log = WitnessLog::<16>::new();
+        let signer = default_signer();
+
+        let record = make_record(ActionKind::CapabilityGrant, 2, 200, 2000);
+        log.signed_append(record, &signer);
+
+        let stored = log.get(0).unwrap();
+        // The stored record's signature should verify.
+        assert!(signer.verify(&stored));
+    }
+
+    #[test]
+    fn test_signed_append_chain_hashes_included() {
+        use crate::signer::{WitnessSigner, default_signer};
+
+        let log = WitnessLog::<16>::new();
+        let signer = default_signer();
+
+        // Append two signed records.
+        log.signed_append(
+            make_record(ActionKind::PartitionCreate, 1, 10, 100),
+            &signer,
+        );
+        log.signed_append(
+            make_record(ActionKind::CapabilityGrant, 1, 20, 200),
+            &signer,
+        );
+
+        let r0 = log.get(0).unwrap();
+        let r1 = log.get(1).unwrap();
+
+        // Chain hashes should be set.
+        assert_ne!(r1.prev_hash, 0);
+        // Both records should verify.
+        assert!(signer.verify(&r0));
+        assert!(signer.verify(&r1));
+    }
+
+    #[test]
+    fn test_signed_append_tampered_record_fails_verify() {
+        use crate::signer::{WitnessSigner, default_signer};
+
+        let log = WitnessLog::<16>::new();
+        let signer = default_signer();
+
+        log.signed_append(
+            make_record(ActionKind::PartitionCreate, 1, 100, 1000),
+            &signer,
+        );
+
+        let mut stored = log.get(0).unwrap();
+        // Tamper with the record.
+        stored.actor_partition_id = 999;
+        // Verify should fail.
+        assert!(!signer.verify(&stored));
     }
 }

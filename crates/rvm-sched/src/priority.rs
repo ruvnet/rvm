@@ -7,6 +7,7 @@ use rvm_types::CutPressure;
 /// `priority = deadline_urgency + cut_pressure_boost`
 ///
 /// Returns a value in [0, 65535]. Higher = more urgent.
+#[inline]
 #[must_use]
 pub fn compute_priority(deadline_urgency: u16, cut_pressure: CutPressure) -> u32 {
     let pressure_boost = (cut_pressure.as_fixed() >> 16).min(u16::MAX as u32) as u16;

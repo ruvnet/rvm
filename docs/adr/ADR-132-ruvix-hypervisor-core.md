@@ -487,3 +487,9 @@ RVM is on track if within 4-6 weeks (end of Phase 1 + early Phase 2) it can demo
 - RuVector mincut crate: `crates/mincut/`
 - RuVector sparsifier crate: `crates/sparsifier/`
 - RuVector solver crate: `crates/solver/`
+
+---
+
+## Addendum (2026-04-04)
+
+**DC-3 update**: P3 (Deep Proof) is no longer deferred. ADR-142 specifies and implements three-tier cryptographic verification: SHA-256 preimage (hash tier), chain linkage + Merkle path (witness tier), and WitnessSigner-based signature verification (ZK/attestation tier). SecurityGate calls `verify_p3()` directly; caller-supplied booleans are no longer trusted. See ADR-142 for full implementation details.

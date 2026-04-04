@@ -325,22 +325,57 @@ impl ActionKind {
 /// Chosen for speed (< 50 ns for 64 bytes), not cryptographic strength.
 /// For tamper resistance against a capable adversary, use the optional
 /// TEE-backed `WitnessSigner` (ADR-134, Section 9).
+///
+/// Unrolls the per-byte loop by 8 for inputs >= 8 bytes while preserving
+/// standard FNV-1a byte-order sensitivity. The remainder is handled
+/// one byte at a time.
+#[inline]
 #[must_use]
-pub const fn fnv1a_64(data: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV offset basis
+pub fn fnv1a_64(data: &[u8]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01B3;
+
+    let mut hash: u64 = FNV_OFFSET;
+    let len = data.len();
     let mut i = 0;
-    while i < data.len() {
+
+    // Process 8 bytes at a time (unrolled), preserving standard FNV-1a
+    // per-byte XOR-then-multiply semantics for hash compatibility.
+    while i + 8 <= len {
         hash ^= data[i] as u64;
-        hash = hash.wrapping_mul(0x0000_0100_0000_01B3); // FNV prime
+        hash = hash.wrapping_mul(FNV_PRIME);
+        hash ^= data[i + 1] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        hash ^= data[i + 2] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        hash ^= data[i + 3] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        hash ^= data[i + 4] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        hash ^= data[i + 5] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        hash ^= data[i + 6] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        hash ^= data[i + 7] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        i += 8;
+    }
+
+    // Handle remaining bytes one at a time.
+    while i < len {
+        hash ^= data[i] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
         i += 1;
     }
+
     hash
 }
 
 /// FNV-1a hash truncated to 32 bits.
+#[inline]
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
-pub const fn fnv1a_32(data: &[u8]) -> u32 {
+pub fn fnv1a_32(data: &[u8]) -> u32 {
     // Intentional truncation: 64-bit hash folded to 32 bits.
     fnv1a_64(data) as u32
 }

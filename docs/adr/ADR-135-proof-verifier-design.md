@@ -469,3 +469,13 @@ Note that `PolicyViolation` deliberately does not indicate which of the P2 check
 - ARM Confidential Compute Architecture (CCA) Specification.
 - RVM security model: `docs/research/ruvm/security-model.md`
 - ADR-132: RVM Hypervisor Core
+
+---
+
+## Addendum (2026-04-04)
+
+P3 (Deep Proof) verification has been implemented per ADR-142. The stub that returned `P3NotImplemented` has been replaced with:
+- Hash tier: SHA-256 preimage verification
+- Witness tier: Chain linkage + Merkle path verification
+- ZK tier: Returns `Unsupported` pending TEE attestation quote support
+- SecurityGate now calls `verify_p3()` directly (caller-supplied boolean no longer trusted)

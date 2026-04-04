@@ -29,6 +29,7 @@ impl EpochTracker {
     }
 
     /// Record a context switch.
+    #[inline]
     pub fn record_switch(&mut self) {
         self.switch_count = self.switch_count.saturating_add(1);
     }
@@ -40,7 +41,7 @@ impl EpochTracker {
             switch_count: self.switch_count,
             runnable_count,
         };
-        self.current_epoch += 1;
+        self.current_epoch = self.current_epoch.wrapping_add(1);
         self.switch_count = 0;
         summary
     }

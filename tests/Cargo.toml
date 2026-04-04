@@ -21,3 +21,6 @@ rvm-boot = { workspace = true }
 rvm-wasm = { workspace = true }
 rvm-security = { workspace = true }
 rvm-kernel = { workspace = true }
+
+[features]
+ed25519 = ["rvm-proof/ed25519"]

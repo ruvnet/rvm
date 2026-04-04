@@ -1,6 +1,7 @@
 //! Chain integrity verification and audit queries.
 
 use crate::hash::compute_chain_hash;
+use crate::log::fold_u64_to_u32;
 use rvm_types::WitnessRecord;
 
 /// Errors detected during chain integrity verification.
@@ -49,7 +50,7 @@ pub fn verify_chain(records: &[WitnessRecord]) -> Result<usize, ChainIntegrityEr
     let mut prev_chain_hash: u64 = 0;
 
     for record in records {
-        let expected_prev = prev_chain_hash as u32;
+        let expected_prev = fold_u64_to_u32(prev_chain_hash);
         if record.prev_hash != expected_prev {
             return Err(ChainIntegrityError::ChainBreak {
                 sequence: record.sequence,
@@ -57,7 +58,7 @@ pub fn verify_chain(records: &[WitnessRecord]) -> Result<usize, ChainIntegrityEr
         }
 
         let chain = compute_chain_hash(prev_chain_hash, record.sequence);
-        if record.record_hash != chain as u32 {
+        if record.record_hash != fold_u64_to_u32(chain) {
             return Err(ChainIntegrityError::RecordCorrupted {
                 sequence: record.sequence,
             });

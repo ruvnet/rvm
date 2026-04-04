@@ -152,12 +152,50 @@ impl<const N: usize> CapabilityManager<N> {
         self.verifier.set_epoch(self.epoch);
     }
 
-    /// Creates a root capability for a new kernel object.
+    /// Creates a root capability for a new kernel object (unchecked).
+    ///
+    /// This is the kernel-internal path; for authorization-checked
+    /// creation, use [`create_root_capability_checked`](Self::create_root_capability_checked).
     ///
     /// # Errors
     ///
     /// Returns a [`CapError`] if the table is full or the derivation tree cannot be updated.
     pub fn create_root_capability(
+        &mut self,
+        cap_type: CapType,
+        rights: CapRights,
+        badge: u64,
+        owner: PartitionId,
+    ) -> CapResult<(u32, u32)> {
+        self.create_root_capability_inner(cap_type, rights, badge, owner)
+    }
+
+    /// Creates a root capability with authorization check.
+    ///
+    /// Only `PartitionId::HYPERVISOR` (the hypervisor itself) is
+    /// authorized to create root capabilities. All other callers are
+    /// rejected with [`CapError::GrantNotPermitted`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CapError::GrantNotPermitted`] if `caller_id` is not the hypervisor.
+    /// Returns a [`CapError`] if the table is full or the derivation tree cannot be updated.
+    pub fn create_root_capability_checked(
+        &mut self,
+        cap_type: CapType,
+        rights: CapRights,
+        badge: u64,
+        owner: PartitionId,
+        caller_id: PartitionId,
+    ) -> CapResult<(u32, u32)> {
+        if !caller_id.is_hypervisor() {
+            return Err(CapError::GrantNotPermitted);
+        }
+        self.create_root_capability_inner(cap_type, rights, badge, owner)
+    }
+
+    /// Internal root capability creation (shared implementation).
+    fn create_root_capability_inner(
         &mut self,
         cap_type: CapType,
         rights: CapRights,
@@ -174,16 +212,21 @@ impl<const N: usize> CapabilityManager<N> {
             self.derivation.add_root(index, u64::from(self.epoch))?;
         }
 
-        self.stats.caps_created += 1;
+        self.stats.caps_created = self.stats.caps_created.wrapping_add(1);
         Ok((index, generation))
     }
 
     /// Grants a derived capability to another partition.
     ///
+    /// `caller_id` identifies the partition performing the grant and is
+    /// checked against the source capability's owner. Pass `None` to
+    /// skip the owner check (kernel-internal use only).
+    ///
     /// # Errors
     ///
-    /// Returns a [`CapError`] if the source is invalid, rights escalation is attempted,
-    /// or the delegation depth limit is exceeded.
+    /// Returns a [`CapError`] if the source is invalid, the caller does
+    /// not own the source, rights escalation is attempted, or the
+    /// delegation depth limit is exceeded.
     pub fn grant(
         &mut self,
         source_index: u32,
@@ -192,13 +235,61 @@ impl<const N: usize> CapabilityManager<N> {
         badge: u64,
         target_owner: PartitionId,
     ) -> CapResult<(u32, u32)> {
+        self.grant_with_caller(
+            source_index,
+            source_generation,
+            requested_rights,
+            badge,
+            target_owner,
+            None,
+        )
+    }
+
+    /// Like [`grant`](Self::grant) but verifies the caller owns the
+    /// source capability.
+    pub fn grant_checked(
+        &mut self,
+        source_index: u32,
+        source_generation: u32,
+        requested_rights: CapRights,
+        badge: u64,
+        target_owner: PartitionId,
+        caller_id: PartitionId,
+    ) -> CapResult<(u32, u32)> {
+        self.grant_with_caller(
+            source_index,
+            source_generation,
+            requested_rights,
+            badge,
+            target_owner,
+            Some(caller_id),
+        )
+    }
+
+    /// Internal grant implementation with optional caller verification.
+    fn grant_with_caller(
+        &mut self,
+        source_index: u32,
+        source_generation: u32,
+        requested_rights: CapRights,
+        badge: u64,
+        target_owner: PartitionId,
+        caller_id: Option<PartitionId>,
+    ) -> CapResult<(u32, u32)> {
         let source_slot = self.table.lookup(source_index, source_generation)?;
         let source_copy = *source_slot;
+
+        // Fix 6: verify the caller owns the source capability.
+        if let Some(caller) = caller_id {
+            if source_copy.owner != caller {
+                return Err(CapError::GrantNotPermitted);
+            }
+        }
 
         let id = self.next_id;
         self.next_id = self.next_id.checked_add(1).ok_or(CapError::TableFull)?;
 
-        let (derived_token, depth) = validate_grant(
+        let (derived_token, depth, consume_grant_once) = validate_grant(
             &source_copy,
             requested_rights,
             id,
@@ -215,16 +306,34 @@ impl<const N: usize> CapabilityManager<N> {
             badge,
         )?;
 
+        // Fix 7: if derivation tracking fails, roll back the table insertion.
         if self.config.track_derivation {
-            self.derivation.add_child(
+            if let Err(e) = self.derivation.add_child(
                 source_index,
                 child_index,
                 depth,
                 u64::from(self.epoch),
-            )?;
+            ) {
+                // Roll back the table insertion to prevent a slot leak.
+                self.table.force_invalidate(child_index);
+                return Err(e);
+            }
         }
 
-        self.stats.caps_granted += 1;
+        // Fix 5: consume GRANT_ONCE from the source after successful grant.
+        if consume_grant_once {
+            if let Ok(slot) = self.table.lookup_mut(source_index, source_generation) {
+                let new_rights = slot.token.rights().difference(CapRights::GRANT_ONCE);
+                slot.token = CapToken::new(
+                    slot.token.id(),
+                    slot.token.cap_type(),
+                    new_rights,
+                    slot.token.epoch(),
+                );
+            }
+        }
+
+        self.stats.caps_granted = self.stats.caps_granted.wrapping_add(1);
         if depth > self.stats.max_depth_reached {
             self.stats.max_depth_reached = depth;
         }
@@ -245,8 +354,8 @@ impl<const N: usize> CapabilityManager<N> {
             generation,
         )?;
 
-        self.stats.caps_revoked += result.revoked_count as u64;
-        self.stats.revoke_operations += 1;
+        self.stats.caps_revoked = self.stats.caps_revoked.wrapping_add(result.revoked_count as u64);
+        self.stats.revoke_operations = self.stats.revoke_operations.wrapping_add(1);
 
         Ok(result)
     }
@@ -279,13 +388,23 @@ impl<const N: usize> CapabilityManager<N> {
         self.verifier.verify_p2(&self.table, &self.derivation, cap_index, cap_generation, ctx)
     }
 
-    /// P3 verification stub (returns `P3NotImplemented` in v1).
+    /// P3: Deep proof — derivation chain integrity verification.
+    ///
+    /// Walks the derivation tree from the capability back to its root,
+    /// verifying that every ancestor is valid, depth is monotonic, and
+    /// epochs are non-decreasing.
     ///
     /// # Errors
     ///
-    /// Always returns [`ProofError::P3NotImplemented`] in v1.
-    pub fn verify_p3(&self) -> Result<(), ProofError> {
-        self.verifier.verify_p3()
+    /// Returns [`ProofError::DerivationChainBroken`] if the chain is invalid.
+    pub fn verify_p3(
+        &self,
+        cap_index: u32,
+        cap_generation: u32,
+        max_depth: u8,
+    ) -> Result<(), ProofError> {
+        self.verifier
+            .verify_p3(&self.table, &self.derivation, cap_index, cap_generation, max_depth)
     }
 
     /// Returns a reference to the underlying table.
@@ -396,8 +515,51 @@ mod tests {
     }
 
     #[test]
-    fn test_p3_not_implemented() {
+    fn test_p3_root_capability_passes() {
+        let mut mgr = CapabilityManager::<64>::with_defaults();
+        let owner = PartitionId::new(1);
+        let (idx, gen) = mgr
+            .create_root_capability(CapType::Region, all_rights(), 0, owner)
+            .unwrap();
+
+        // Root capability should pass P3 (trivial chain).
+        assert!(mgr.verify_p3(idx, gen, 8).is_ok());
+    }
+
+    #[test]
+    fn test_p3_nonexistent_fails() {
         let mgr = CapabilityManager::<64>::with_defaults();
-        assert_eq!(mgr.verify_p3(), Err(ProofError::P3NotImplemented));
+        assert_eq!(
+            mgr.verify_p3(99, 0, 8),
+            Err(ProofError::DerivationChainBroken),
+        );
+    }
+
+    #[test]
+    fn test_create_root_checked_hypervisor_allowed() {
+        let mut mgr = CapabilityManager::<64>::with_defaults();
+        let owner = PartitionId::new(1);
+        let result = mgr.create_root_capability_checked(
+            CapType::Region,
+            all_rights(),
+            0,
+            owner,
+            PartitionId::hypervisor(),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_create_root_checked_non_hypervisor_denied() {
+        let mut mgr = CapabilityManager::<64>::with_defaults();
+        let owner = PartitionId::new(1);
+        let result = mgr.create_root_capability_checked(
+            CapType::Region,
+            all_rights(),
+            0,
+            owner,
+            PartitionId::new(1), // non-hypervisor caller
+        );
+        assert_eq!(result, Err(CapError::GrantNotPermitted));
     }
 }

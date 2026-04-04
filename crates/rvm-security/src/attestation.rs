@@ -1,11 +1,16 @@
-//! Attestation chain — collects boot measurements and runtime witness
-//! hashes into a verifiable attestation report.
+//! Attestation chain -- collects boot measurements and runtime witness
+//! hashes into a verifiable attestation report (ADR-134, ADR-142).
 //!
 //! The attestation chain provides a tamper-evident record of the
 //! platform's boot and runtime state. It can be presented to a remote
 //! verifier to prove the system booted correctly and has been operating
 //! within policy.
+//!
+//! When the `crypto-sha256` feature is enabled (default), SHA-256 is
+//! used for chain extension, producing a native 32-byte chain root.
+//! When disabled, the legacy FNV-1a overlapping-window scheme is used.
 
+#[cfg(not(feature = "crypto-sha256"))]
 use rvm_types::fnv1a_64;
 
 /// Maximum number of entries in the attestation chain.
@@ -91,7 +96,27 @@ impl AttestationChain {
         true
     }
 
-    /// Extend the running chain hash with a new measurement.
+    /// Extend the running chain hash with a new measurement using SHA-256.
+    ///
+    /// `new_chain_hash = SHA-256(current_chain_hash || measurement_hash)`
+    ///
+    /// The output is a native 32-byte digest -- a perfect fit for the
+    /// `chain_root: [u8; 32]` field.
+    #[cfg(feature = "crypto-sha256")]
+    fn extend_chain_hash(&mut self, hash: &[u8; 32]) {
+        use sha2::{Sha256, Digest};
+
+        let mut hasher = Sha256::new();
+        hasher.update(self.chain_hash);
+        hasher.update(hash);
+        let digest = hasher.finalize();
+
+        self.chain_hash.copy_from_slice(&digest);
+    }
+
+    /// Extend the running chain hash with a new measurement using FNV-1a
+    /// overlapping windows (legacy fallback).
+    #[cfg(not(feature = "crypto-sha256"))]
     fn extend_chain_hash(&mut self, hash: &[u8; 32]) {
         let mut input = [0u8; 64]; // current chain hash + new hash
         input[..32].copy_from_slice(&self.chain_hash);
@@ -177,9 +202,12 @@ pub struct AttestationReport {
 /// Verify an attestation report against an expected chain root.
 ///
 /// Returns `true` if the report's chain root matches the expected root.
+/// Uses constant-time comparison to prevent timing side-channel attacks
+/// when verifying attestation roots derived from secrets.
 #[must_use]
 pub fn verify_attestation(report: &AttestationReport, expected_root: &[u8; 32]) -> bool {
-    report.chain_root == *expected_root
+    use subtle::ConstantTimeEq;
+    report.chain_root.ct_eq(expected_root).into()
 }
 
 #[cfg(test)]
@@ -306,5 +334,14 @@ mod tests {
         let r1 = c1.generate_attestation_report();
         let r2 = c2.generate_attestation_report();
         assert_ne!(r1.chain_root, r2.chain_root);
+    }
+
+    #[cfg(feature = "crypto-sha256")]
+    #[test]
+    fn test_chain_root_not_zero_after_measurement() {
+        let mut chain = AttestationChain::new();
+        chain.add_boot_measurement([0xAA; 32]);
+        let report = chain.generate_attestation_report();
+        assert_ne!(report.chain_root, [0u8; 32]);
     }
 }

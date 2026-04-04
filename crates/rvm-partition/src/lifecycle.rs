@@ -14,7 +14,8 @@ pub fn valid_transition(from: PartitionState, to: PartitionState) -> bool {
             | (
                 PartitionState::Created
                     | PartitionState::Running
-                    | PartitionState::Suspended,
+                    | PartitionState::Suspended
+                    | PartitionState::Hibernated,
                 PartitionState::Destroyed
             )
             | (
@@ -154,8 +155,8 @@ mod tests {
     }
 
     #[test]
-    fn test_hibernated_to_destroyed_invalid() {
-        assert!(!valid_transition(PartitionState::Hibernated, PartitionState::Destroyed));
+    fn test_hibernated_to_destroyed_valid() {
+        assert!(valid_transition(PartitionState::Hibernated, PartitionState::Destroyed));
     }
 
     #[test]

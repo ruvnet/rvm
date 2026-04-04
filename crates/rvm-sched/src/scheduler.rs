@@ -11,10 +11,17 @@ use rvm_types::{CutPressure, PartitionId};
 pub const MAX_RUN_QUEUE: usize = 32;
 
 /// An entry in a per-CPU run queue.
+///
+/// Uses `PartitionId::HYPERVISOR` (id 0) as the empty sentinel instead
+/// of `Option<RunQueueEntry>`, eliminating the discriminant byte and
+/// associated padding. The hypervisor partition is never schedulable,
+/// so `partition_id == PartitionId::HYPERVISOR` unambiguously means
+/// the slot is empty.
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 pub struct RunQueueEntry {
     /// Partition identifier.
+    /// `PartitionId::HYPERVISOR` (0) means this slot is empty.
     pub partition_id: PartitionId,
     /// Deadline urgency (higher = more urgent).
     pub deadline_urgency: u16,
@@ -22,6 +29,23 @@ pub struct RunQueueEntry {
     pub cut_pressure: CutPressure,
     /// Computed priority (cached).
     pub priority: u32,
+}
+
+impl RunQueueEntry {
+    /// The empty sentinel entry (hypervisor partition, zero priority).
+    pub const EMPTY: Self = Self {
+        partition_id: PartitionId::HYPERVISOR,
+        deadline_urgency: 0,
+        cut_pressure: CutPressure::ZERO,
+        priority: 0,
+    };
+
+    /// Returns true if this entry is the empty sentinel.
+    #[inline]
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.partition_id.is_hypervisor()
+    }
 }
 
 /// The top-level scheduler for all CPUs.
@@ -33,8 +57,8 @@ pub struct RunQueueEntry {
 pub struct Scheduler<const MAX_CPUS: usize, const MAX_PARTITIONS: usize> {
     /// Per-CPU scheduler metadata.
     per_cpu: [PerCpuScheduler; MAX_CPUS],
-    /// Per-CPU run queues.
-    run_queues: [[Option<RunQueueEntry>; MAX_RUN_QUEUE]; MAX_CPUS],
+    /// Per-CPU run queues (sentinel-based: `RunQueueEntry::EMPTY` = unused).
+    run_queues: [[RunQueueEntry; MAX_RUN_QUEUE]; MAX_CPUS],
     /// Per-CPU run queue lengths.
     queue_lens: [usize; MAX_CPUS],
     /// Current scheduling mode.
@@ -46,10 +70,8 @@ pub struct Scheduler<const MAX_CPUS: usize, const MAX_PARTITIONS: usize> {
 }
 
 impl<const MAX_CPUS: usize, const MAX_PARTITIONS: usize> Scheduler<MAX_CPUS, MAX_PARTITIONS> {
-    /// Sentinel value.
-    const NONE_ENTRY: Option<RunQueueEntry> = None;
-    /// Empty run queue.
-    const EMPTY_QUEUE: [Option<RunQueueEntry>; MAX_RUN_QUEUE] = [Self::NONE_ENTRY; MAX_RUN_QUEUE];
+    /// Empty run queue (all sentinel entries).
+    const EMPTY_QUEUE: [RunQueueEntry; MAX_RUN_QUEUE] = [RunQueueEntry::EMPTY; MAX_RUN_QUEUE];
 
     /// Create a new scheduler in Flow mode.
     #[must_use]
@@ -98,14 +120,19 @@ impl<const MAX_CPUS: usize, const MAX_PARTITIONS: usize> Scheduler<MAX_CPUS, MAX
     }
 
     /// Advance the scheduler epoch. Returns the completed epoch summary.
+    #[inline]
     pub fn tick_epoch(&mut self) -> EpochSummary {
-        let runnable: u16 = self.queue_lens.iter().map(|&l| l as u16).sum();
-        self.epoch.advance(runnable)
+        let runnable: u32 = self.queue_lens.iter().map(|&l| l as u32).sum();
+        // Clamp to u16::MAX to fit EpochSummary::runnable_count.
+        let clamped = if runnable > u16::MAX as u32 { u16::MAX } else { runnable as u16 };
+        self.epoch.advance(clamped)
     }
 
     /// Enqueue a partition on a specific CPU.
     ///
+    /// Uses a binary max-heap for O(log n) insertion instead of O(n) sorted insert.
     /// In degraded mode (DC-6), `cut_pressure` is zeroed automatically.
+    #[inline]
     pub fn enqueue(
         &mut self,
         cpu: usize,
@@ -131,50 +158,75 @@ impl<const MAX_CPUS: usize, const MAX_PARTITIONS: usize> Scheduler<MAX_CPUS, MAX
             priority,
         };
 
-        // Insert maintaining sorted order (highest priority first).
+        // Binary max-heap push: O(log n).
         let len = self.queue_lens[cpu];
         let queue = &mut self.run_queues[cpu];
+        queue[len] = entry;
+        self.queue_lens[cpu] = len + 1;
 
-        let mut insert_pos = len;
-        for i in 0..len {
-            if let Some(ref existing) = queue[i] {
-                if priority > existing.priority {
-                    insert_pos = i;
-                    break;
-                }
+        // Sift up: bubble the new entry toward the root.
+        let mut pos = len;
+        while pos > 0 {
+            let parent = (pos - 1) / 2;
+            if queue[pos].priority > queue[parent].priority {
+                queue.swap(pos, parent);
+                pos = parent;
+            } else {
+                break;
             }
         }
 
-        // Shift entries down.
-        let mut i = len;
-        while i > insert_pos {
-            queue[i] = queue[i - 1];
-            i -= 1;
-        }
-
-        queue[insert_pos] = Some(entry);
-        self.queue_lens[cpu] += 1;
         true
     }
 
     /// Pick the next partition on a specific CPU and switch to it.
     ///
+    /// Uses a binary max-heap for O(log n) pop instead of O(n) shift.
     /// Returns `(old_partition, new_partition)` if a switch occurred.
+    #[inline]
     pub fn switch_next(&mut self, cpu: usize) -> Option<(Option<PartitionId>, PartitionId)> {
         if cpu >= MAX_CPUS || self.queue_lens[cpu] == 0 {
             return None;
         }
 
         let queue = &mut self.run_queues[cpu];
-        let entry = queue[0].take()?;
-
-        // Shift entries up.
         let len = self.queue_lens[cpu];
-        for i in 0..len - 1 {
-            queue[i] = queue[i + 1];
+
+        // Extract the max (root of the heap).
+        let entry = queue[0];
+        if entry.is_empty() {
+            return None;
         }
-        queue[len - 1] = None;
-        self.queue_lens[cpu] -= 1;
+
+        // Move the last element to the root and clear the vacated slot.
+        if len > 1 {
+            queue[0] = queue[len - 1];
+        }
+        queue[len - 1] = RunQueueEntry::EMPTY;
+        self.queue_lens[cpu] = len - 1;
+
+        // Sift down: restore heap property.
+        let new_len = len - 1;
+        let mut pos = 0;
+        loop {
+            let left = 2 * pos + 1;
+            let right = 2 * pos + 2;
+            let mut largest = pos;
+
+            if left < new_len && queue[left].priority > queue[largest].priority {
+                largest = left;
+            }
+            if right < new_len && queue[right].priority > queue[largest].priority {
+                largest = right;
+            }
+
+            if largest != pos {
+                queue.swap(pos, largest);
+                pos = largest;
+            } else {
+                break;
+            }
+        }
 
         let old = self.per_cpu[cpu].current;
         self.per_cpu[cpu].current = Some(entry.partition_id);

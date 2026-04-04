@@ -574,3 +574,14 @@ This closes the loop between the proof system and the witness system: proofs aut
 - ADR-132: RVM Hypervisor Core.
 - ADR-133: Partition Object Model.
 - RVM Architecture Document, Section 8: Witness Subsystem.
+
+---
+
+## Addendum (2026-04-04)
+
+Per ADR-142, the following changes supersede parts of this ADR:
+
+- **Hash chaining upgraded to SHA-256**: FNV-1a is no longer the default for witness chain hashing. SHA-256 is now the default (feature-gated `crypto-sha256`, enabled by default). FNV-1a is retained only behind the `fnv-fallback` feature flag for non-security hash table indexing.
+- **`NullSigner` is no longer the default**: The `WitnessSigner` trait now defaults to `HmacSha256WitnessSigner` (HMAC-SHA256, constant-time verify). `NullSigner` is gated behind `#[cfg(any(test, feature = "null-signer"))]` and cannot be instantiated in release builds without the `fnv-fallback` feature.
+- **`aux` field carries HMAC signatures**: The `aux` field (offset 56, 8 bytes) is now used to store truncated HMAC-SHA256 signatures from the `WitnessSigner`. `signed_append()` populates this field after chain-hash metadata is set. The field is no longer reserved/unused in default configurations.
+- **Ed25519 signer available**: `Ed25519WitnessSigner` (`ed25519-dalek` ^2.1, `verify_strict()`) is available behind the `ed25519` feature flag for cross-partition, publicly verifiable signing.

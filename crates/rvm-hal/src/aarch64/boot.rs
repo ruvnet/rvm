@@ -10,6 +10,49 @@
 /// Number of general-purpose registers saved during context switch (x0-x30).
 pub const GP_REG_COUNT: usize = 31;
 
+/// SPSR_EL2 M[3:0] value for EL1h (handler mode).
+const SPSR_M_EL1H: u64 = 0b0101;
+
+/// SPSR_EL2 M[3:0] value for EL1t (thread mode).
+const SPSR_M_EL1T: u64 = 0b0100;
+
+/// Mask for SPSR_EL2 M[3:0] field.
+const SPSR_M_MASK: u64 = 0xF;
+
+/// Addresses at or above this threshold are considered hypervisor address
+/// space and must never appear in ELR_EL2 when returning to a guest.
+const HYPERVISOR_ADDR_THRESHOLD: u64 = 0xFFFF_0000_0000_0000;
+
+/// Sanitize an SPSR_EL2 value to prevent return to EL2 or higher.
+///
+/// The M[3:0] field is checked against the only two permitted guest modes:
+/// EL1h (0b0101) and EL1t (0b0100). If the value would return to any
+/// other exception level (especially EL2 = 0b1001), it is forced to EL1h
+/// with DAIF masked (the safe default).
+///
+/// This is a **critical security gate** -- without it a malicious guest
+/// could craft SPSR to ERET back into EL2 and escape the hypervisor.
+#[inline]
+pub fn sanitize_spsr(raw: u64) -> u64 {
+    let mode = raw & SPSR_M_MASK;
+    if mode == SPSR_M_EL1H || mode == SPSR_M_EL1T {
+        raw
+    } else {
+        // Force EL1h with all DAIF bits masked (bits [9:6] = 0xF).
+        // Preserve nothing from the untrusted value.
+        (0xF << 6) | SPSR_M_EL1H
+    }
+}
+
+/// Validate that an ELR_EL2 value does not point into hypervisor address
+/// space. Guest return addresses must be below the hypervisor threshold.
+///
+/// Returns `true` if the address is safe for guest return.
+#[inline]
+pub fn validate_elr(elr: u64) -> bool {
+    elr < HYPERVISOR_ADDR_THRESHOLD
+}
+
 /// Read the current exception level from the `CurrentEL` system register.
 ///
 /// Returns the exception level as a value 0-3.
@@ -43,9 +86,12 @@ pub fn current_el() -> u8 {
 ///
 /// # Panics
 ///
-/// Panics (via debug assert) if not called at EL2.
+/// Panics if not called at EL2.
 pub fn configure_hcr_el2() {
-    debug_assert_eq!(current_el(), 2, "configure_hcr_el2 must be called at EL2");
+    // SECURITY: This MUST be a hard assert, not debug_assert. Configuring
+    // HCR_EL2 from the wrong exception level is a critical security violation
+    // that must be caught in release builds.
+    assert_eq!(current_el(), 2, "configure_hcr_el2 must be called at EL2");
 
     let hcr: u64 = (1 << 0)   // VM: enable stage-2 translation
         | (1 << 1)             // SWIO: set/way invalidation override
@@ -70,19 +116,21 @@ pub fn configure_hcr_el2() {
 /// Set the stage-2 page table base register (VTTBR_EL2).
 ///
 /// `base` must be the physical address of a 4KB-aligned stage-2 level-1
-/// page table. The VMID field is set to 0 (single-guest boot).
+/// page table. `vmid` is placed in VTTBR_EL2\[63:48\] to tag TLB entries
+/// for this partition. Each partition MUST have a unique VMID.
 ///
 /// # Panics
 ///
-/// Panics (via debug assert) if `base` is not 4KB-aligned.
-pub fn set_vttbr_el2(base: u64) {
-    debug_assert_eq!(base & 0xFFF, 0, "VTTBR_EL2 base must be 4KB-aligned");
+/// Panics if `base` is not 4KB-aligned.
+pub fn set_vttbr_el2(base: u64, vmid: u16) {
+    assert_eq!(base & 0xFFF, 0, "VTTBR_EL2 base must be 4KB-aligned");
 
-    // VMID = 0, BADDR = base (bits [47:1] hold the table address).
-    let vttbr = base;
+    // VMID in bits [63:48], BADDR in bits [47:1].
+    let vttbr = ((vmid as u64) << 48) | (base & 0x0000_FFFF_FFFF_FFFE);
 
     // SAFETY: Setting VTTBR_EL2 at EL2 with a valid, aligned page table
     // base is the required step before enabling stage-2 translation.
+    // The VMID field isolates this partition's TLB entries from others.
     unsafe {
         core::arch::asm!(
             "msr VTTBR_EL2, {val}",
@@ -179,6 +227,16 @@ pub fn invalidate_stage2_tlb() {
 /// [33]     : SPSR_EL2 (saved PSTATE of guest)
 /// ```
 ///
+/// # Security
+///
+/// Before restoring SPSR_EL2, the value is sanitized via [`sanitize_spsr`]
+/// to ensure the M\[3:0\] field only allows EL1h or EL1t. This prevents a
+/// malicious guest from crafting a saved SPSR that ERets back into EL2.
+///
+/// ELR_EL2 is validated to be below the hypervisor address threshold.
+/// If the target VMIDs differ between the current and incoming context,
+/// a TLBI VMALLS12E1 is issued to flush stale stage-1/stage-2 entries.
+///
 /// NOTE: A full context switch (including x18/x19/x29) would be
 /// implemented as a standalone `.S` assembly file linked externally,
 /// or via `core::arch::global_asm!`. This inline version saves/restores
@@ -191,7 +249,62 @@ pub fn invalidate_stage2_tlb() {
 /// Both `from_regs` and `to_regs` must point to valid 34-element arrays.
 /// This function must be called at EL2. The caller is responsible for
 /// ensuring that `to_regs` contains a valid saved context.
+///
+/// # Panics
+///
+/// Panics if `to_regs[33]` (SPSR_EL2) contains a mode field that would
+/// return to EL2 or higher after sanitization (this cannot happen since
+/// sanitize_spsr forces a safe default, but the ELR check will panic if
+/// the guest return address is in hypervisor space).
 pub unsafe fn context_switch(from_regs: &mut [u64; 34], to_regs: &[u64; 34]) {
+    // SECURITY: Validate ELR_EL2 is not in hypervisor address space.
+    // A guest-controlled ELR pointing into EL2 code would let the guest
+    // redirect hypervisor execution on ERET.
+    assert!(
+        validate_elr(to_regs[32]),
+        "ELR_EL2 ({:#x}) points into hypervisor address space",
+        to_regs[32]
+    );
+
+    // SECURITY: Sanitize SPSR_EL2 M[3:0] to prevent ERET to EL2.
+    // We write the sanitized value into to_regs[33] via raw pointer so
+    // the assembly block loads the safe version from the same offset it
+    // always did. This avoids consuming an additional register operand
+    // (the asm block already uses all 31 GP registers).
+    let sanitized_spsr: u64 = sanitize_spsr(to_regs[33]);
+
+    // SAFETY: We write only to index 33 of the array, which is within
+    // bounds. The caller owns this context and we are on the exclusive
+    // code path (interrupts routed to EL2 via HCR_EL2). Writing the
+    // sanitized SPSR here is semantically equivalent to the caller
+    // having sanitized it before calling us.
+    unsafe {
+        let spsr_slot = to_regs.as_ptr().cast_mut().add(33);
+        core::ptr::write_volatile(spsr_slot, sanitized_spsr);
+    }
+
+    // Delegate to the inner function which contains only the asm block.
+    // This separation ensures LLVM doesn't hold assert format-string
+    // temporaries live across the asm block (which uses all 31 GP regs).
+    //
+    // SAFETY: Caller guarantees valid 34-element arrays and EL2. The
+    // SPSR slot at to_regs[33] has been sanitized above.
+    unsafe {
+        context_switch_inner(from_regs, to_regs);
+    }
+}
+
+/// Inner context-switch routine containing only the register
+/// save/restore assembly. Separated from [`context_switch`] to prevent
+/// LLVM from holding validation temporaries live across the asm block,
+/// which would exceed the AArch64 register budget.
+///
+/// # Safety
+///
+/// Both arrays must be valid 34-element slices. Must be called at EL2.
+/// `to_regs[33]` must already be sanitized by the caller.
+#[inline(never)]
+unsafe fn context_switch_inner(from_regs: &mut [u64; 34], to_regs: &[u64; 34]) {
     let from_ptr = from_regs.as_mut_ptr();
     let to_ptr = to_regs.as_ptr();
 
@@ -199,8 +312,9 @@ pub unsafe fn context_switch(from_regs: &mut [u64; 34], to_regs: &[u64; 34]) {
     // The STP/LDP instructions operate on memory pointed to by from_ptr
     // and to_ptr. We explicitly name all GP registers in the assembly
     // rather than in clobber lists, because LLVM reserves x18/x19/x29.
-    // The "memory" clobber ensures the compiler does not reorder memory
-    // accesses across this block.
+    //
+    // SPSR_EL2 at [to + #264] has been sanitized by the caller
+    // (context_switch), so the LDR below loads only the safe value.
     unsafe {
         core::arch::asm!(
             // ---- SAVE current context to from_ptr ----
@@ -234,11 +348,13 @@ pub unsafe fn context_switch(from_regs: &mut [u64; 34], to_regs: &[u64; 34]) {
             "str {tmp}, [{from}, #264]",
 
             // ---- RESTORE new context from to_ptr ----
-            // Restore system registers first (before GP regs)
+            // Restore ELR_EL2 from memory (already validated by caller)
             "ldr {tmp}, [{to}, #256]",
             "msr ELR_EL2, {tmp}",
+            // Restore SPSR_EL2 (sanitized by caller via write_volatile)
             "ldr {tmp}, [{to}, #264]",
             "msr SPSR_EL2, {tmp}",
+            // Restore SP_EL1
             "ldr {tmp}, [{to}, #248]",
             "msr SP_EL1, {tmp}",
             // Restore x30 (LR)
@@ -283,6 +399,40 @@ pub unsafe fn context_switch(from_regs: &mut [u64; 34], to_regs: &[u64; 34]) {
     }
 }
 
+/// Perform a VMID-aware context switch with TLB invalidation.
+///
+/// Wraps [`context_switch`] with an additional step: if `from_vmid` and
+/// `to_vmid` differ, a TLBI VMALLS12E1 is issued after saving the old
+/// context and before restoring the new one. This ensures stale stage-1
+/// and stage-2 TLB entries from the previous partition do not leak into
+/// the incoming partition's address space.
+///
+/// # Safety
+///
+/// Same requirements as [`context_switch`]. Additionally, `from_vmid`
+/// and `to_vmid` must accurately reflect the VMIDs of the respective
+/// contexts.
+pub unsafe fn context_switch_vmid(
+    from_regs: &mut [u64; 34],
+    to_regs: &[u64; 34],
+    from_vmid: u16,
+    to_vmid: u16,
+) {
+    if from_vmid != to_vmid {
+        // SAFETY: TLBI VMALLS12E1 invalidates all stage-1 and stage-2
+        // TLB entries for the current VMID. The DSB+ISB ensures
+        // completion before the new context is restored. This is
+        // required when switching between partitions with different
+        // VMIDs to prevent cross-partition TLB leaks.
+        invalidate_stage2_tlb();
+    }
+
+    // SAFETY: Caller guarantees valid arrays and EL2 execution.
+    unsafe {
+        context_switch(from_regs, to_regs);
+    }
+}
+
 /// Clear the BSS section to zero.
 ///
 /// # Safety
@@ -302,7 +452,13 @@ pub unsafe fn clear_bss() {
     unsafe {
         let start = core::ptr::addr_of_mut!(__bss_start);
         let end = core::ptr::addr_of_mut!(__bss_end);
-        let len = (end as usize).wrapping_sub(start as usize);
+        debug_assert!(
+            end as usize >= start as usize,
+            "BSS end ({:p}) < start ({:p}): linker script misconfigured",
+            end,
+            start,
+        );
+        let len = (end as usize).saturating_sub(start as usize);
         core::ptr::write_bytes(start, 0, len);
     }
 }

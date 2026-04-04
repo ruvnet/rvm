@@ -72,7 +72,7 @@ impl MigrationState {
 pub const MIGRATION_TIMEOUT_NS: u64 = 100_000_000;
 
 /// Tracks the progress of an agent migration.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MigrationTracker {
     /// The migration plan.
     pub plan: MigrationPlan,
@@ -86,14 +86,20 @@ pub struct MigrationTracker {
 
 impl MigrationTracker {
     /// Begin a new migration. Sets the state to `Serializing`.
-    #[must_use]
-    pub const fn begin(plan: MigrationPlan, now_ns: u64) -> Self {
-        Self {
+    ///
+    /// Returns `Err(InvalidPartitionState)` if `source_partition` and
+    /// `dest_partition` in the plan are the same -- migrating a partition
+    /// to itself is a no-op that would corrupt coherence edges.
+    pub const fn begin(plan: MigrationPlan, now_ns: u64) -> RvmResult<Self> {
+        if plan.source_partition.as_u32() == plan.dest_partition.as_u32() {
+            return Err(RvmError::InvalidPartitionState);
+        }
+        Ok(Self {
             plan,
             state: MigrationState::Serializing,
             start_ns: now_ns,
             bytes_transferred: 0,
-        }
+        })
     }
 
     /// Advance to the next migration step.
@@ -200,7 +206,7 @@ mod tests {
     fn test_full_migration_protocol() {
         let log = WitnessLog::<32>::new();
         let plan = make_plan();
-        let mut tracker = MigrationTracker::begin(plan, 0);
+        let mut tracker = MigrationTracker::begin(plan, 0).unwrap();
         assert_eq!(tracker.state, MigrationState::Serializing);
 
         // Advance through all 7 steps.
@@ -227,7 +233,7 @@ mod tests {
     fn test_migration_timeout() {
         let log = WitnessLog::<32>::new();
         let plan = make_plan();
-        let mut tracker = MigrationTracker::begin(plan, 0);
+        let mut tracker = MigrationTracker::begin(plan, 0).unwrap();
 
         // Advance once.
         tracker.advance(1_000, &log).unwrap();
@@ -242,7 +248,7 @@ mod tests {
     fn test_abort() {
         let log = WitnessLog::<32>::new();
         let plan = make_plan();
-        let mut tracker = MigrationTracker::begin(plan, 0);
+        let mut tracker = MigrationTracker::begin(plan, 0).unwrap();
 
         tracker.abort(&log);
         assert!(tracker.is_aborted());
@@ -255,7 +261,7 @@ mod tests {
     fn test_cannot_advance_past_complete() {
         let log = WitnessLog::<32>::new();
         let plan = make_plan();
-        let mut tracker = MigrationTracker::begin(plan, 0);
+        let mut tracker = MigrationTracker::begin(plan, 0).unwrap();
 
         for i in 0..7 {
             tracker.advance((i + 1) * 1000, &log).unwrap();
@@ -269,7 +275,7 @@ mod tests {
     fn test_witness_on_complete() {
         let log = WitnessLog::<32>::new();
         let plan = make_plan();
-        let mut tracker = MigrationTracker::begin(plan, 0);
+        let mut tracker = MigrationTracker::begin(plan, 0).unwrap();
 
         for i in 0..7 {
             tracker.advance((i + 1) * 1000, &log).unwrap();
@@ -277,6 +283,20 @@ mod tests {
 
         // Should have emitted a witness record on completion.
         assert!(log.total_emitted() > 0);
+    }
+
+    #[test]
+    fn test_source_equals_dest_rejected() {
+        let plan = MigrationPlan {
+            agent_id: AgentId::from_badge(1),
+            source_partition: PartitionId::new(10),
+            dest_partition: PartitionId::new(10),
+            deadline_ns: MIGRATION_TIMEOUT_NS,
+        };
+        assert_eq!(
+            MigrationTracker::begin(plan, 0),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]

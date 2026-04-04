@@ -108,11 +108,12 @@ pub fn timer_disable() {
 
 /// Convert nanoseconds to timer ticks at the given frequency.
 ///
-/// # Panics
-///
-/// Panics if `freq_hz` is zero.
+/// Returns 0 if `freq_hz` is zero (timer not yet initialized).
 #[must_use]
 pub const fn ns_to_ticks(ns: u64, freq_hz: u64) -> u64 {
+    if freq_hz == 0 {
+        return 0;
+    }
     // ticks = ns * freq / 1_000_000_000
     // Use u128 intermediate to avoid overflow.
     ((ns as u128 * freq_hz as u128) / 1_000_000_000) as u64
@@ -120,11 +121,12 @@ pub const fn ns_to_ticks(ns: u64, freq_hz: u64) -> u64 {
 
 /// Convert timer ticks to nanoseconds at the given frequency.
 ///
-/// # Panics
-///
-/// Panics if `freq_hz` is zero.
+/// Returns 0 if `freq_hz` is zero (timer not yet initialized).
 #[must_use]
 pub const fn ticks_to_ns(ticks: u64, freq_hz: u64) -> u64 {
+    if freq_hz == 0 {
+        return 0;
+    }
     // ns = ticks * 1_000_000_000 / freq
     ((ticks as u128 * 1_000_000_000) / freq_hz as u128) as u64
 }
@@ -222,6 +224,16 @@ mod tests {
         let timer = Aarch64Timer::new();
         assert_eq!(timer.freq(), 0);
         assert!(!timer.deadline_active);
+    }
+
+    #[test]
+    fn test_ns_to_ticks_zero_freq() {
+        assert_eq!(ns_to_ticks(1_000_000_000, 0), 0);
+    }
+
+    #[test]
+    fn test_ticks_to_ns_zero_freq() {
+        assert_eq!(ticks_to_ns(62_500_000, 0), 0);
     }
 
     #[test]

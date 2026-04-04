@@ -82,6 +82,9 @@ pub enum ProofError {
     PolicyViolation,
     /// P3: Deep proof verification not implemented in v1.
     P3NotImplemented,
+    /// P3: The derivation chain is broken — an ancestor is invalid,
+    /// revoked, or the chain does not terminate at a root.
+    DerivationChainBroken,
 }
 
 impl fmt::Display for ProofError {
@@ -92,6 +95,7 @@ impl fmt::Display for ProofError {
             Self::InsufficientRights => write!(f, "P1: insufficient rights"),
             Self::PolicyViolation => write!(f, "P2: policy violation"),
             Self::P3NotImplemented => write!(f, "P3: not implemented in v1"),
+            Self::DerivationChainBroken => write!(f, "P3: derivation chain broken"),
         }
     }
 }
@@ -104,6 +108,7 @@ impl From<ProofError> for RvmError {
             ProofError::StaleCapability => RvmError::StaleCapability,
             ProofError::PolicyViolation => RvmError::ProofInvalid,
             ProofError::P3NotImplemented => RvmError::Unsupported,
+            ProofError::DerivationChainBroken => RvmError::ProofInvalid,
         }
     }
 }

@@ -14,12 +14,23 @@ use rvm_types::{CapRights, CapToken, CapType, PartitionId};
 /// Generation counters prevent stale handle access after deallocation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CapSlot {
-    /// The capability token (valid if `is_valid` is true).
+    /// The capability token (valid when `generation != 0`).
     pub token: CapToken,
     /// Generation counter for stale handle detection.
+    ///
+    /// Generation 0 is the **invalid sentinel**: a slot with `generation == 0`
+    /// is empty/free. Live slots always have `generation >= 1`, and the
+    /// counter skips 0 on wrap-around (see [`invalidate`](Self::invalidate)).
+    ///
+    /// # Security note
+    ///
+    /// This is a u32, giving a 2^32 cycle forgery window: if an attacker
+    /// can cause exactly 2^32 allocate/free cycles on a single slot, a
+    /// stale handle could alias a new capability. In practice this is
+    /// infeasible (would require ~4 billion operations on one slot), and
+    /// widening to u64 would double `CapSlot` size and break the memory
+    /// layout. Accepted as a low-severity residual risk.
     pub generation: u32,
-    /// Whether this slot is currently in use.
-    pub is_valid: bool,
     /// The partition that owns this capability.
     pub owner: PartitionId,
     /// Delegation depth (0 = root capability).
@@ -32,13 +43,14 @@ pub struct CapSlot {
 
 impl CapSlot {
     /// Creates an empty (invalid) slot.
+    ///
+    /// Empty slots have `generation == 0`, which is the invalid sentinel.
     #[inline]
     #[must_use]
     const fn empty() -> Self {
         Self {
             token: CapToken::new(0, CapType::Region, CapRights::empty(), 0),
             generation: 0,
-            is_valid: false,
             owner: PartitionId::new(0),
             depth: 0,
             parent_index: u32::MAX,
@@ -46,26 +58,61 @@ impl CapSlot {
         }
     }
 
+    /// Returns true if this slot is currently valid (in use).
+    #[inline]
+    #[must_use]
+    pub const fn is_valid(&self) -> bool {
+        self.generation != 0
+    }
+
     /// Returns true if this slot matches the given generation.
     #[inline]
     #[must_use]
     pub const fn matches(&self, generation: u32) -> bool {
-        self.is_valid && self.generation == generation
+        self.is_valid() && self.generation == generation
     }
 
-    /// Invalidates this slot, incrementing the generation counter.
+    /// Invalidates this slot, bumping the generation counter for the
+    /// next allocation and then clearing it to 0 (the free sentinel).
+    ///
+    /// The bumped generation is stored in `parent_index` (unused while
+    /// the slot is free) so that the next `insert_*` call can recover it.
     ///
     /// # Security
     ///
-    /// Generation 0 is the initial value for fresh slots, so wrapping
-    /// back to 0 would create a forgery window where a stale handle
-    /// could match a newly allocated slot. We skip 0 on wrap-around.
+    /// Generation 0 is the invalid sentinel. The counter skips 0 on
+    /// wrap-around so that a re-allocated slot never gets generation 0.
     #[inline]
     pub fn invalidate(&mut self) {
-        self.is_valid = false;
         let next_gen = self.generation.wrapping_add(1);
-        // Skip generation 0 to avoid aliasing with fresh slot defaults.
-        self.generation = if next_gen == 0 { 1 } else { next_gen };
+        // Skip generation 0 (the free sentinel) to prevent aliasing.
+        let safe_gen = if next_gen == 0 { 1 } else { next_gen };
+        // Stash the next generation in parent_index while the slot is free.
+        self.parent_index = safe_gen;
+        // Mark the slot as free.
+        self.generation = 0;
+    }
+
+    /// Recover the next generation counter for a free slot.
+    ///
+    /// For fresh (never-used) slots this returns 1 (since generation 0
+    /// is the invalid sentinel). For previously-invalidated slots, the
+    /// stashed value from `parent_index` is returned.
+    #[inline]
+    #[must_use]
+    const fn next_generation(&self) -> u32 {
+        // Fresh slots have parent_index == u32::MAX and generation == 0.
+        // Invalidated slots have the next-gen stashed in parent_index.
+        if self.generation != 0 {
+            // Slot is occupied -- shouldn't be called, but return current.
+            self.generation
+        } else if self.parent_index == u32::MAX {
+            // Fresh slot, never allocated. First valid generation is 1.
+            1
+        } else {
+            // Previously invalidated: parent_index holds the stashed gen.
+            self.parent_index
+        }
     }
 }
 
@@ -144,12 +191,11 @@ impl<const N: usize> CapabilityTable<N> {
         badge: u64,
     ) -> CapResult<(u32, u32)> {
         let index = self.find_free_slot()?;
-        let generation = self.slots[index].generation;
+        let generation = self.slots[index].next_generation();
 
         self.slots[index] = CapSlot {
             token,
             generation,
-            is_valid: true,
             owner,
             depth: 0,
             parent_index: u32::MAX,
@@ -175,12 +221,11 @@ impl<const N: usize> CapabilityTable<N> {
         badge: u64,
     ) -> CapResult<(u32, u32)> {
         let index = self.find_free_slot()?;
-        let generation = self.slots[index].generation;
+        let generation = self.slots[index].next_generation();
 
         self.slots[index] = CapSlot {
             token,
             generation,
-            is_valid: true,
             owner,
             depth,
             parent_index,
@@ -197,13 +242,14 @@ impl<const N: usize> CapabilityTable<N> {
     ///
     /// Returns [`CapError::InvalidHandle`] if the index is out of bounds or the slot is empty.
     /// Returns [`CapError::StaleHandle`] if the generation does not match.
+    #[inline]
     pub fn lookup(&self, index: u32, generation: u32) -> CapResult<&CapSlot> {
         let idx = index as usize;
         if idx >= N {
             return Err(CapError::InvalidHandle);
         }
         let slot = &self.slots[idx];
-        if !slot.is_valid {
+        if !slot.is_valid() {
             return Err(CapError::InvalidHandle);
         }
         if slot.generation != generation {
@@ -224,7 +270,7 @@ impl<const N: usize> CapabilityTable<N> {
             return Err(CapError::InvalidHandle);
         }
         let slot = &mut self.slots[idx];
-        if !slot.is_valid {
+        if !slot.is_valid() {
             return Err(CapError::InvalidHandle);
         }
         if slot.generation != generation {
@@ -245,7 +291,7 @@ impl<const N: usize> CapabilityTable<N> {
             return Err(CapError::InvalidHandle);
         }
         let slot = &mut self.slots[idx];
-        if !slot.is_valid {
+        if !slot.is_valid() {
             return Err(CapError::InvalidHandle);
         }
         if slot.generation != generation {
@@ -262,7 +308,7 @@ impl<const N: usize> CapabilityTable<N> {
     /// Invalidates a slot by index without generation check (internal revocation).
     pub(crate) fn force_invalidate(&mut self, index: u32) {
         let idx = index as usize;
-        if idx < N && self.slots[idx].is_valid {
+        if idx < N && self.slots[idx].is_valid() {
             self.slots[idx].invalidate();
             self.count -= 1;
             if idx < self.free_hint {
@@ -277,7 +323,7 @@ impl<const N: usize> CapabilityTable<N> {
         self.slots
             .iter()
             .enumerate()
-            .filter(|(_, s)| s.is_valid)
+            .filter(|(_, s)| s.is_valid())
             // Safe: N <= u32::MAX in practice (capped at 256).
             .map(|(i, s)| (i as u32, s))
     }
@@ -285,13 +331,13 @@ impl<const N: usize> CapabilityTable<N> {
     /// Finds a free slot, starting from `free_hint`.
     fn find_free_slot(&mut self) -> CapResult<usize> {
         for i in self.free_hint..N {
-            if !self.slots[i].is_valid {
+            if !self.slots[i].is_valid() {
                 self.free_hint = i + 1;
                 return Ok(i);
             }
         }
         for i in 0..self.free_hint {
-            if !self.slots[i].is_valid {
+            if !self.slots[i].is_valid() {
                 self.free_hint = i + 1;
                 return Ok(i);
             }
