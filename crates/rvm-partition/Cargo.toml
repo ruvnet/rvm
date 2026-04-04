@@ -1,0 +1,25 @@
+[package]
+name = "rvm-partition"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Partition object model for RVM coherence domains (ADR-133)"
+keywords = ["hypervisor", "partition", "coherence", "no_std"]
+categories = ["no-std", "embedded", "os"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+rvm-cap = { workspace = true }
+rvm-witness = { workspace = true }
+spin = { workspace = true }
+
+[features]
+default = []
+std = ["rvm-types/std", "rvm-cap/std", "rvm-witness/std"]
+alloc = ["rvm-types/alloc", "rvm-cap/alloc", "rvm-witness/alloc"]

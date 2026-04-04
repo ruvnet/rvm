@@ -1,0 +1,25 @@
+[package]
+name = "rvm-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Optional WebAssembly guest runtime for the RVM microhypervisor"
+keywords = ["hypervisor", "wasm", "webassembly", "no_std"]
+categories = ["no-std", "embedded", "wasm"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+rvm-partition = { workspace = true }
+rvm-cap = { workspace = true }
+rvm-witness = { workspace = true }
+
+[features]
+default = []
+std = ["rvm-types/std", "rvm-partition/std", "rvm-cap/std", "rvm-witness/std"]
+alloc = ["rvm-types/alloc", "rvm-partition/alloc", "rvm-cap/alloc", "rvm-witness/alloc"]

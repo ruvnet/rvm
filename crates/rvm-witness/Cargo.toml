@@ -1,0 +1,25 @@
+[package]
+name = "rvm-witness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Witness logging subsystem for RVM audit trail (ADR-134)"
+keywords = ["hypervisor", "witness", "audit", "no_std"]
+categories = ["no-std", "embedded", "os"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+spin = { workspace = true, features = ["mutex", "spin_mutex"] }
+
+[dev-dependencies]
+
+[features]
+default = []
+std = ["rvm-types/std"]
+alloc = ["rvm-types/alloc"]

@@ -1,0 +1,26 @@
+[package]
+name = "rvm-coherence"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Coherence monitoring and Phi computation for the RVM microhypervisor (ADR-139)"
+keywords = ["hypervisor", "coherence", "iit", "phi", "no_std"]
+categories = ["no-std", "embedded", "os"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+rvm-partition = { workspace = true }
+rvm-sched = { workspace = true, optional = true }
+
+[features]
+default = []
+std = ["rvm-types/std", "rvm-partition/std"]
+alloc = ["rvm-types/alloc", "rvm-partition/alloc"]
+## Enable scheduler integration for coherence-weighted scheduling feedback.
+sched = ["rvm-sched"]

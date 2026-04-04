@@ -1,0 +1,25 @@
+[package]
+name = "rvm-types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Core types for the RVM coherence-native microhypervisor (ADR-132)"
+keywords = ["hypervisor", "coherence", "no_std", "types"]
+categories = ["no-std", "embedded", "os"]
+
+[lib]
+crate-type = ["rlib"]
+
+# Zero external dependencies for foundation types
+[dependencies]
+bitflags = { workspace = true }
+
+[dev-dependencies]
+
+[features]
+default = []
+std = []
+alloc = []

@@ -1,0 +1,68 @@
+[workspace]
+members = [
+    "crates/rvm-types",
+    "crates/rvm-hal",
+    "crates/rvm-cap",
+    "crates/rvm-witness",
+    "crates/rvm-proof",
+    "crates/rvm-partition",
+    "crates/rvm-sched",
+    "crates/rvm-memory",
+    "crates/rvm-coherence",
+    "crates/rvm-boot",
+    "crates/rvm-wasm",
+    "crates/rvm-security",
+    "crates/rvm-kernel",
+    "tests",
+    "benches",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MIT OR Apache-2.0"
+authors = ["RuVector Contributors"]
+repository = "https://github.com/ruvnet/rvm"
+description = "RVM: Coherence-native microhypervisor for edge computing and multi-agent systems"
+
+[workspace.dependencies]
+# Internal dependencies
+rvm-types = { path = "crates/rvm-types" }
+rvm-hal = { path = "crates/rvm-hal" }
+rvm-cap = { path = "crates/rvm-cap" }
+rvm-witness = { path = "crates/rvm-witness" }
+rvm-proof = { path = "crates/rvm-proof" }
+rvm-partition = { path = "crates/rvm-partition" }
+rvm-sched = { path = "crates/rvm-sched" }
+rvm-memory = { path = "crates/rvm-memory" }
+rvm-coherence = { path = "crates/rvm-coherence" }
+rvm-boot = { path = "crates/rvm-boot" }
+rvm-wasm = { path = "crates/rvm-wasm" }
+rvm-security = { path = "crates/rvm-security" }
+rvm-kernel = { path = "crates/rvm-kernel" }
+
+# External dependencies
+lz4_flex = { version = "0.11", default-features = false }
+spin = { version = "0.9", default-features = false }
+bitflags = { version = "2", default-features = false }
+
+# Testing
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.5"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.bench]
+inherits = "release"
+debug = true
+
+[profile.dev]
+opt-level = 0
+debug = true

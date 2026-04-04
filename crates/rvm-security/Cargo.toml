@@ -1,0 +1,23 @@
+[package]
+name = "rvm-security"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Security policy enforcement for the RVM microhypervisor"
+keywords = ["hypervisor", "security", "capability", "no_std"]
+categories = ["no-std", "embedded", "os"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+rvm-witness = { workspace = true }
+
+[features]
+default = []
+std = ["rvm-types/std", "rvm-witness/std"]
+alloc = ["rvm-types/alloc", "rvm-witness/alloc"]

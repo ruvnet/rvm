@@ -1,0 +1,25 @@
+[package]
+name = "rvm-memory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Memory management and guest physical address space for the RVM microhypervisor (ADR-138)"
+keywords = ["hypervisor", "memory", "mmu", "no_std"]
+categories = ["no-std", "embedded", "os"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+rvm-hal = { workspace = true }
+rvm-partition = { workspace = true }
+rvm-witness = { workspace = true }
+
+[features]
+default = []
+std = ["rvm-types/std", "rvm-hal/std", "rvm-partition/std", "rvm-witness/std"]
+alloc = ["rvm-types/alloc", "rvm-hal/alloc", "rvm-partition/alloc", "rvm-witness/alloc"]

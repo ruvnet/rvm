@@ -1,0 +1,41 @@
+[package]
+name = "rvm-boot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Boot sequence and initialization for the RVM microhypervisor (ADR-140)"
+keywords = ["hypervisor", "boot", "initialization", "no_std"]
+categories = ["no-std", "embedded", "os"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+rvm-hal = { workspace = true }
+rvm-partition = { workspace = true }
+rvm-witness = { workspace = true }
+rvm-sched = { workspace = true }
+rvm-memory = { workspace = true }
+
+[features]
+default = []
+std = [
+    "rvm-types/std",
+    "rvm-hal/std",
+    "rvm-partition/std",
+    "rvm-witness/std",
+    "rvm-sched/std",
+    "rvm-memory/std",
+]
+alloc = [
+    "rvm-types/alloc",
+    "rvm-hal/alloc",
+    "rvm-partition/alloc",
+    "rvm-witness/alloc",
+    "rvm-sched/alloc",
+    "rvm-memory/alloc",
+]

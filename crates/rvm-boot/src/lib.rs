@@ -1,0 +1,133 @@
+//! # RVM Boot Sequence
+//!
+//! Deterministic, phased boot sequence for the RVM microhypervisor,
+//! as specified in ADR-140. Each phase is gated by a witness entry
+//! and must complete before the next phase begins.
+//!
+//! ## Boot Phases
+//!
+//! ```text
+//! Phase 0: HAL init (timer, MMU, interrupts)
+//! Phase 1: Memory pool init (physical page allocator)
+//! Phase 2: Capability table init
+//! Phase 3: Witness trail init
+//! Phase 4: Scheduler init
+//! Phase 5: Root partition creation
+//! Phase 6: Hand-off to root partition
+//! ```
+
+#![no_std]
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
+
+use rvm_types::{RvmError, RvmResult};
+
+/// Boot phases executed in order during RVM initialization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum BootPhase {
+    /// Phase 0: Hardware abstraction layer initialization.
+    HalInit = 0,
+    /// Phase 1: Physical memory pool initialization.
+    MemoryInit = 1,
+    /// Phase 2: Capability table initialization.
+    CapabilityInit = 2,
+    /// Phase 3: Witness trail initialization.
+    WitnessInit = 3,
+    /// Phase 4: Scheduler initialization.
+    SchedulerInit = 4,
+    /// Phase 5: Root partition creation.
+    RootPartition = 5,
+    /// Phase 6: Hand-off to the root partition.
+    Handoff = 6,
+}
+
+impl BootPhase {
+    /// Return the next phase, or `None` if this is the last phase.
+    #[must_use]
+    pub const fn next(self) -> Option<Self> {
+        match self {
+            Self::HalInit => Some(Self::MemoryInit),
+            Self::MemoryInit => Some(Self::CapabilityInit),
+            Self::CapabilityInit => Some(Self::WitnessInit),
+            Self::WitnessInit => Some(Self::SchedulerInit),
+            Self::SchedulerInit => Some(Self::RootPartition),
+            Self::RootPartition => Some(Self::Handoff),
+            Self::Handoff => None,
+        }
+    }
+
+    /// Return the human-readable name of this phase.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::HalInit => "HAL init",
+            Self::MemoryInit => "memory init",
+            Self::CapabilityInit => "capability init",
+            Self::WitnessInit => "witness init",
+            Self::SchedulerInit => "scheduler init",
+            Self::RootPartition => "root partition",
+            Self::Handoff => "handoff",
+        }
+    }
+}
+
+/// Track boot progress through the phased initialization.
+#[derive(Debug)]
+pub struct BootTracker {
+    current: Option<BootPhase>,
+    completed: [bool; 7],
+}
+
+impl BootTracker {
+    /// Create a new boot tracker at the beginning of the sequence.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            current: Some(BootPhase::HalInit),
+            completed: [false; 7],
+        }
+    }
+
+    /// Return the current phase, or `None` if boot is complete.
+    #[must_use]
+    pub const fn current_phase(&self) -> Option<BootPhase> {
+        self.current
+    }
+
+    /// Mark the current phase as complete and advance.
+    ///
+    /// Returns the completed phase on success, or an error if boot
+    /// is already complete or phases are executed out of order.
+    pub fn complete_phase(&mut self, phase: BootPhase) -> RvmResult<BootPhase> {
+        match self.current {
+            Some(current) if current as u8 == phase as u8 => {
+                self.completed[phase as usize] = true;
+                self.current = phase.next();
+                Ok(phase)
+            }
+            Some(_) => Err(RvmError::InternalError),
+            None => Err(RvmError::Unsupported),
+        }
+    }
+
+    /// Check whether all boot phases have completed.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.current.is_none() && self.completed.iter().all(|&c| c)
+    }
+
+    /// Check whether a specific phase has been completed.
+    #[must_use]
+    pub fn phase_completed(&self, phase: BootPhase) -> bool {
+        self.completed[phase as usize]
+    }
+}

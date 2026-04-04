@@ -1,0 +1,23 @@
+[package]
+name = "rvm-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+rvm-types = { workspace = true }
+rvm-hal = { workspace = true }
+rvm-cap = { workspace = true }
+rvm-witness = { workspace = true }
+rvm-proof = { workspace = true }
+rvm-partition = { workspace = true }
+rvm-sched = { workspace = true }
+rvm-memory = { workspace = true }
+rvm-coherence = { workspace = true }
+rvm-boot = { workspace = true }
+rvm-wasm = { workspace = true }
+rvm-security = { workspace = true }
+rvm-kernel = { workspace = true }

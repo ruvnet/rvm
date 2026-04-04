@@ -1,0 +1,22 @@
+[package]
+name = "rvm-hal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Hardware abstraction layer for the RVM microhypervisor (ADR-133)"
+keywords = ["hypervisor", "hal", "no_std", "embedded"]
+categories = ["no-std", "embedded", "os"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+
+[features]
+default = []
+std = ["rvm-types/std"]
+alloc = ["rvm-types/alloc"]
