@@ -39,6 +39,15 @@
 #![deny(missing_docs)]
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_lossless,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate,
+    clippy::doc_markdown,
+    clippy::new_without_default
+)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

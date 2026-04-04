@@ -384,8 +384,8 @@ pub struct NeighborIter<'a, const MAX_NODES: usize, const MAX_EDGES: usize> {
     current_edge: u16,
 }
 
-impl<'a, const MAX_NODES: usize, const MAX_EDGES: usize> Iterator
-    for NeighborIter<'a, MAX_NODES, MAX_EDGES>
+impl<const MAX_NODES: usize, const MAX_EDGES: usize> Iterator
+    for NeighborIter<'_, MAX_NODES, MAX_EDGES>
 {
     /// `(neighbor_node_idx, edge_weight)`
     type Item = (NodeIdx, u64);

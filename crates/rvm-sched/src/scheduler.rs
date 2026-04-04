@@ -1,7 +1,6 @@
 //! Main scheduler: ties together per-CPU schedulers, epoch management,
 //! mode selection, and degraded mode handling.
 
-use crate::degraded::{DegradedReason, DegradedState};
 use crate::epoch::{EpochSummary, EpochTracker};
 use crate::modes::SchedulerMode;
 use crate::per_cpu::PerCpuScheduler;
@@ -13,6 +12,7 @@ pub const MAX_RUN_QUEUE: usize = 32;
 
 /// An entry in a per-CPU run queue.
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub struct RunQueueEntry {
     /// Partition identifier.
     pub partition_id: PartitionId,

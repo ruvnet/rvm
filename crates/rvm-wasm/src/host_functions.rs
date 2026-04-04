@@ -58,7 +58,6 @@ pub enum HostCallResult {
 
 impl HostCallResult {
     /// Return the value if successful, or the error.
-    #[must_use]
     pub fn into_result(self) -> RvmResult<u64> {
         match self {
             Self::Success(val) => Ok(val),

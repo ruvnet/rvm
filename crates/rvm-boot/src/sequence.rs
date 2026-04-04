@@ -101,11 +101,7 @@ impl PhaseTiming {
     /// Duration in ticks, or 0 if incomplete.
     #[must_use]
     pub const fn duration_ticks(&self) -> u64 {
-        if self.end_tick > self.start_tick {
-            self.end_tick - self.start_tick
-        } else {
-            0
-        }
+        self.end_tick.saturating_sub(self.start_tick)
     }
 }
 
@@ -209,11 +205,7 @@ impl BootSequence {
     pub fn total_ticks(&self) -> u64 {
         let first_start = self.timings[0].start_tick;
         let last_end = self.timings[BOOT_STAGE_COUNT - 1].end_tick;
-        if last_end > first_start {
-            last_end - first_start
-        } else {
-            0
-        }
+        last_end.saturating_sub(first_start)
     }
 }
 
