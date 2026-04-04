@@ -1,15 +1,31 @@
 //! # RVM Memory Manager
 //!
 //! Guest physical address space management for the RVM microhypervisor,
-//! as specified in ADR-138. Provides a safe abstraction over stage-2
-//! page table mappings with capability-gated access.
+//! as specified in ADR-136 and ADR-138. Provides a safe abstraction over
+//! four-tier coherence-driven memory with reconstruction capability.
 //!
-//! ## Memory Model
+//! ## Four-Tier Memory Model (ADR-136)
 //!
-//! - Each partition has an independent guest physical address space
-//! - Mappings are created via capability-checked hypercalls
-//! - All mapping operations are recorded in the witness trail
-//! - Memory regions can be shared between partitions with explicit grants
+//! | Tier | Name | Description |
+//! |------|------|-------------|
+//! | 0 | Hot | Per-core SRAM / L1-adjacent; always resident during execution |
+//! | 1 | Warm | Shared DRAM; resident if residency rule is met |
+//! | 2 | Dormant | Compressed checkpoint + delta; reconstructed on demand |
+//! | 3 | Cold | Persistent archival; accessed only during recovery |
+//!
+//! ## Key Components
+//!
+//! - [`tier::TierManager`] -- Coherence-driven tier placement and transitions
+//! - [`allocator::BuddyAllocator`] -- Power-of-two physical page allocator
+//! - [`region::RegionManager`] -- Owned region lifecycle and address translation
+//! - [`reconstruction::ReconstructionPipeline`] -- Dormant state restoration
+//!
+//! ## Design Constraints
+//!
+//! - `#![no_std]` with zero heap allocation
+//! - `#![forbid(unsafe_code)]`
+//! - Works without the coherence engine (DC-1 static fallback thresholds)
+//! - All tier transitions are explicit, not demand-paged
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -24,6 +40,20 @@ extern crate alloc;
 extern crate std;
 
 use rvm_types::{GuestPhysAddr, PartitionId, PhysAddr, RvmError, RvmResult};
+
+pub mod allocator;
+pub mod reconstruction;
+pub mod region;
+pub mod tier;
+
+// Re-export key types at crate root for convenience.
+pub use allocator::BuddyAllocator;
+pub use reconstruction::{
+    CheckpointId, CompressedCheckpoint, ReconstructionPipeline, ReconstructionResult,
+    WitnessDelta, create_checkpoint,
+};
+pub use region::{AddressMapping, OwnedRegion, RegionConfig, RegionManager};
+pub use tier::{RegionTierState, Tier, TierManager, TierThresholds};
 
 /// Page size in bytes (4 KiB).
 pub const PAGE_SIZE: usize = 4096;
@@ -62,7 +92,9 @@ impl MemoryPermissions {
     };
 }
 
-/// A memory region descriptor.
+/// A legacy memory region descriptor (ADR-138 compatibility).
+///
+/// For new code, prefer [`region::OwnedRegion`] which includes tier metadata.
 #[derive(Debug, Clone, Copy)]
 pub struct MemoryRegion {
     /// Guest physical base address (must be page-aligned).
@@ -78,6 +110,12 @@ pub struct MemoryRegion {
 }
 
 /// Validate that a memory region descriptor is well-formed.
+///
+/// # Errors
+///
+/// Returns [`RvmError::AlignmentError`] if addresses are not page-aligned.
+/// Returns [`RvmError::ResourceLimitExceeded`] if the page count is zero.
+/// Returns [`RvmError::Unsupported`] if no permission bits are set.
 pub fn validate_region(region: &MemoryRegion) -> RvmResult<()> {
     if !region.guest_base.is_page_aligned() {
         return Err(RvmError::AlignmentError);

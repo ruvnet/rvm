@@ -13,6 +13,13 @@
 //! 3. **Witness logging** -- Record the decision for future audit
 //!
 //! Only after all three stages pass does the hypercall proceed.
+//!
+//! ## Modules
+//!
+//! - [`gate`] -- Unified security gate (single entry point)
+//! - [`validation`] -- Input validation for security-critical parameters
+//! - [`attestation`] -- Attestation chain and report generation
+//! - [`budget`] -- DMA and resource budget enforcement
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -26,7 +33,17 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod attestation;
+pub mod budget;
+pub mod gate;
+pub mod validation;
+
 use rvm_types::{CapRights, CapToken, CapType, RvmError, RvmResult, WitnessHash};
+
+// Re-export key types for convenience.
+pub use attestation::{AttestationChain, AttestationReport, verify_attestation};
+pub use budget::{DmaBudget, ResourceQuota};
+pub use gate::{GateRequest, GateResponse, SecurityError, SecurityGate};
 
 /// The result of a security policy decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,9 +54,12 @@ pub enum PolicyDecision {
     Deny(RvmError),
 }
 
-/// A security gate request combining all required inputs.
+/// A lightweight policy request for quick evaluate/enforce checks.
+///
+/// For the full unified security gate with witness logging, use
+/// [`gate::GateRequest`] with [`SecurityGate::check_and_execute`].
 #[derive(Debug, Clone, Copy)]
-pub struct GateRequest<'a> {
+pub struct PolicyRequest<'a> {
     /// The capability token presented by the caller.
     pub token: &'a CapToken,
     /// The required capability type.
@@ -50,12 +70,15 @@ pub struct GateRequest<'a> {
     pub proof_commitment: Option<&'a WitnessHash>,
 }
 
-/// Evaluate a security gate request against the policy.
+/// Evaluate a policy request against the security policy.
 ///
 /// Returns `Allow` only if the capability check and (optional) proof
 /// commitment are satisfied. The caller is responsible for witness
 /// logging after the decision.
-pub fn evaluate(request: &GateRequest<'_>) -> PolicyDecision {
+///
+/// For the full gate pipeline with automatic witness logging, use
+/// [`SecurityGate::check_and_execute`] instead.
+pub fn evaluate(request: &PolicyRequest<'_>) -> PolicyDecision {
     // Stage 1: Capability type check.
     if request.token.cap_type() != request.required_type {
         return PolicyDecision::Deny(RvmError::CapabilityTypeMismatch);
@@ -79,7 +102,7 @@ pub fn evaluate(request: &GateRequest<'_>) -> PolicyDecision {
 }
 
 /// Convenience function: evaluate and return `RvmResult<()>`.
-pub fn enforce(request: &GateRequest<'_>) -> RvmResult<()> {
+pub fn enforce(request: &PolicyRequest<'_>) -> RvmResult<()> {
     match evaluate(request) {
         PolicyDecision::Allow => Ok(()),
         PolicyDecision::Deny(e) => Err(e),

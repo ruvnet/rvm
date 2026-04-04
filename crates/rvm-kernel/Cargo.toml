@@ -59,5 +59,7 @@ alloc = [
 ]
 ## Enable WebAssembly guest support.
 wasm = []
+## Enable coherence engine integration.
+coherence = []
 ## Enable coherence-scheduler feedback loop.
 coherence-sched = ["rvm-coherence/sched"]

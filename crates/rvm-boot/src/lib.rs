@@ -1,10 +1,22 @@
 //! # RVM Boot Sequence
 //!
 //! Deterministic, phased boot sequence for the RVM microhypervisor,
-//! as specified in ADR-140. Each phase is gated by a witness entry
-//! and must complete before the next phase begins.
+//! as specified in ADR-137 and ADR-140. Each phase is gated by a
+//! witness entry and must complete before the next phase begins.
 //!
-//! ## Boot Phases
+//! ## Boot Phases (ADR-137: 7-phase deterministic boot)
+//!
+//! ```text
+//! Phase 0: Reset vector (initial entry from firmware)
+//! Phase 1: Hardware detect (enumerate CPUs, memory, devices)
+//! Phase 2: MMU setup (stage-2 page tables)
+//! Phase 3: Hypervisor mode (enter EL2)
+//! Phase 4: Kernel object init (cap table, IPC, etc.)
+//! Phase 5: First witness (genesis attestation)
+//! Phase 6: Scheduler entry (hand-off to scheduler loop)
+//! ```
+//!
+//! ## Legacy Boot Phases (ADR-140)
 //!
 //! ```text
 //! Phase 0: HAL init (timer, MMU, interrupts)
@@ -15,6 +27,12 @@
 //! Phase 5: Root partition creation
 //! Phase 6: Hand-off to root partition
 //! ```
+//!
+//! ## Modules
+//!
+//! - [`sequence`] -- 7-phase boot sequence manager (ADR-137)
+//! - [`measured`] -- Measured boot hash-chain accumulation
+//! - [`hal_init`] -- HAL initialization trait stubs
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -28,7 +46,16 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod hal_init;
+pub mod measured;
+pub mod sequence;
+
 use rvm_types::{RvmError, RvmResult};
+
+// Re-export key types for convenience.
+pub use hal_init::{HalInit, InterruptConfig, MmuConfig, StubHal, UartConfig};
+pub use measured::MeasuredBootState;
+pub use sequence::{BootSequence, BootStage, PhaseTiming};
 
 /// Boot phases executed in order during RVM initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

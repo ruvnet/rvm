@@ -17,6 +17,7 @@ crate-type = ["rlib"]
 rvm-types = { workspace = true }
 rvm-cap = { workspace = true }
 rvm-witness = { workspace = true }
+spin = { workspace = true }
 
 [features]
 default = []

@@ -11,6 +11,12 @@
 //! | `Hash` | SHA-256 preimage | O(1) | Routine transitions |
 //! | `Witness` | Witness chain verification | O(n) | Cross-partition ops |
 //! | `Zk` | Zero-knowledge proof | Expensive | Privacy-preserving |
+//!
+//! ## Modules
+//!
+//! - [`context`]: Proof context with builder pattern for P2 validation
+//! - [`engine`]: Unified proof engine (P1 -> P2 -> witness pipeline)
+//! - [`policy`]: P2 policy rules with constant-time evaluation
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -23,6 +29,10 @@ extern crate alloc;
 
 #[cfg(feature = "std")]
 extern crate std;
+
+pub mod context;
+pub mod engine;
+pub mod policy;
 
 use rvm_types::{CapRights, CapToken, RvmError, RvmResult, WitnessHash};
 

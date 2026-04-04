@@ -435,10 +435,7 @@ dependencies = [
 name = "rvm-memory"
 version = "0.1.0"
 dependencies = [
- "rvm-hal",
- "rvm-partition",
  "rvm-types",
- "rvm-witness",
 ]
 
 [[package]]
@@ -458,6 +455,7 @@ dependencies = [
  "rvm-cap",
  "rvm-types",
  "rvm-witness",
+ "spin",
 ]
 
 [[package]]

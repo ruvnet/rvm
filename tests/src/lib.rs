@@ -128,7 +128,7 @@ mod tests {
             0,
         );
 
-        let request = rvm_security::GateRequest {
+        let request = rvm_security::PolicyRequest {
             token: &token,
             required_type: CapType::Partition,
             required_rights: CapRights::READ,
@@ -137,7 +137,7 @@ mod tests {
         assert!(rvm_security::enforce(&request).is_ok());
 
         // Wrong type should fail.
-        let bad_request = rvm_security::GateRequest {
+        let bad_request = rvm_security::PolicyRequest {
             token: &token,
             required_type: CapType::Region,
             required_rights: CapRights::READ,

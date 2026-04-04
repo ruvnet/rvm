@@ -9,6 +9,9 @@
 //! - Wasm modules execute in a sandboxed interpreter within a partition
 //! - Host functions are exposed through the capability system
 //! - All Wasm state transitions are witness-logged
+//! - Agent lifecycle follows ADR-140 state machine
+//! - Per-partition resource quotas are enforced per epoch
+//! - Migration uses a 7-step protocol with DC-7 timeout
 //!
 //! This crate is a compile-time optional feature; disabling it
 //! removes all Wasm-related code from the final binary.
@@ -24,6 +27,11 @@ extern crate alloc;
 
 #[cfg(feature = "std")]
 extern crate std;
+
+pub mod agent;
+pub mod host_functions;
+pub mod migration;
+pub mod quota;
 
 use rvm_types::{PartitionId, RvmError, RvmResult};
 
