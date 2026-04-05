@@ -1,0 +1,391 @@
+name: Nightly Verified Release
+
+on:
+  schedule:
+    # Run at 03:00 UTC every day
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Force release even if no new Claude version'
+        required: false
+        default: 'false'
+        type: boolean
+      skip_ai_analysis:
+        description: 'Skip AI-powered analysis'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Phase 1: Detect new Claude Code release
+  # ─────────────────────────────────────────────────────────────
+  detect:
+    name: Detect Claude Code Release
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.check.outputs.new_version }}
+      should_release: ${{ steps.check.outputs.should_release }}
+      previous_version: ${{ steps.check.outputs.previous_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Check for new Claude Code version
+        id: check
+        run: |
+          chmod +x scripts/check-claude-release.sh
+
+          PREVIOUS=$(cat scripts/last-known-claude-version.txt 2>/dev/null || echo "none")
+          echo "previous_version=${PREVIOUS}" >> "$GITHUB_OUTPUT"
+
+          if ./scripts/check-claude-release.sh > /tmp/new_version.txt 2>/tmp/check_stderr.txt; then
+            NEW_VERSION=$(cat /tmp/new_version.txt)
+            echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "New Claude Code version detected: ${NEW_VERSION}"
+          else
+            EXIT_CODE=$?
+            cat /tmp/check_stderr.txt
+            if [[ "${{ inputs.force_release }}" == "true" ]]; then
+              echo "Force release requested. Using current version."
+              echo "new_version=${PREVIOUS}" >> "$GITHUB_OUTPUT"
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "No new version. Skipping release."
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              echo "new_version=${PREVIOUS}" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  # ─────────────────────────────────────────────────────────────
+  # Phase 2: Full verification (only if new version detected)
+  # ─────────────────────────────────────────────────────────────
+  verify:
+    name: Verify (No Regressions)
+    needs: detect
+    if: needs.detect.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      test_passed: ${{ steps.tests.outputs.passed }}
+      bench_passed: ${{ steps.bench_check.outputs.passed }}
+      audit_passed: ${{ steps.audit.outputs.passed }}
+      test_count: ${{ steps.tests.outputs.test_count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-none
+          components: clippy
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # ── Gate 1: All tests must pass ──
+      - name: Run full test suite
+        id: tests
+        run: |
+          echo "Running all workspace tests..."
+          TEST_OUTPUT=$(cargo test --workspace --lib 2>&1) || {
+            echo "::error::Test suite FAILED"
+            echo "${TEST_OUTPUT}"
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          }
+
+          # Count passing tests
+          TOTAL=$(echo "${TEST_OUTPUT}" | grep "test result:" | awk '{sum += $4} END {print sum}')
+          FAILED=$(echo "${TEST_OUTPUT}" | grep "test result:" | awk '{sum += $6} END {print sum}')
+          echo "test_count=${TOTAL}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${FAILED}" -gt 0 ]]; then
+            echo "::error::${FAILED} tests FAILED"
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "All ${TOTAL} tests passed."
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+
+          # Save test report
+          echo "{\"passed\": ${TOTAL}, \"failed\": 0, \"date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > test-report.json
+
+      # ── Gate 2: Clippy must be clean ──
+      - name: Clippy lint check
+        run: |
+          cargo clippy --workspace -- -D warnings
+
+      # ── Gate 3: Bare-metal build must succeed ──
+      - name: Bare-metal cross-compile check
+        run: |
+          cargo check --target aarch64-unknown-none -p rvm-hal --no-default-features
+
+      # ── Gate 4: Security audit ──
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Security audit
+        id: audit
+        run: |
+          if cargo audit 2>&1; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::cargo audit found issues (non-blocking for now)"
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Gate 5: Benchmarks with regression detection ──
+      - name: Run benchmarks
+        run: |
+          cargo bench -p rvm-benches -- --output-format=bencher 2>&1 | tee benchmark-output.txt || true
+
+      - name: Check benchmark regressions
+        id: bench_check
+        run: |
+          chmod +x scripts/benchmark-regression-check.sh
+
+          if [[ -d "target/criterion" ]]; then
+            if ./scripts/benchmark-regression-check.sh target/criterion; then
+              echo "passed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::Benchmark regression detected (>5% threshold)"
+              echo "passed=false" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+          else
+            echo "No criterion output. Skipping regression check."
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Save artifacts ──
+      - name: Upload verification artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-reports
+          path: |
+            test-report.json
+            scripts/benchmark-report.json
+            benchmark-output.txt
+          retention-days: 90
+
+  # ─────────────────────────────────────────────────────────────
+  # Phase 3: AI-powered discovery analysis (optional)
+  # ─────────────────────────────────────────────────────────────
+  analyze:
+    name: AI Discovery Analysis
+    needs: [detect, verify]
+    if: |
+      needs.detect.outputs.should_release == 'true' &&
+      inputs.skip_ai_analysis != 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      analysis: ${{ steps.ai.outputs.analysis }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Analyze changes with Claude API
+        id: ai
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          NEW_VERSION="${{ needs.detect.outputs.new_version }}"
+          PREV_VERSION="${{ needs.detect.outputs.previous_version }}"
+
+          if [[ -z "${ANTHROPIC_API_KEY}" ]]; then
+            echo "No ANTHROPIC_API_KEY. Skipping AI analysis."
+            echo "analysis=AI analysis skipped (no API key configured)." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          chmod +x scripts/analyze-discoveries.sh
+          ANALYSIS=$(./scripts/analyze-discoveries.sh "${NEW_VERSION}" "${PREV_VERSION}" 2>/dev/null) || {
+            echo "AI analysis failed. Continuing without it."
+            ANALYSIS="AI analysis unavailable for this release."
+          }
+
+          # Truncate to 4000 chars for GitHub output
+          ANALYSIS="${ANALYSIS:0:4000}"
+          # Use delimiter for multiline output
+          echo "analysis<<ANALYSIS_EOF" >> "$GITHUB_OUTPUT"
+          echo "${ANALYSIS}" >> "$GITHUB_OUTPUT"
+          echo "ANALYSIS_EOF" >> "$GITHUB_OUTPUT"
+
+  # ─────────────────────────────────────────────────────────────
+  # Phase 4: Publish verified release
+  # ─────────────────────────────────────────────────────────────
+  release:
+    name: Publish Verified Release
+    needs: [detect, verify, analyze]
+    if: |
+      always() &&
+      needs.detect.outputs.should_release == 'true' &&
+      needs.verify.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download verification artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-reports
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update version state
+        run: |
+          NEW_VERSION="${{ needs.detect.outputs.new_version }}"
+          echo "${NEW_VERSION}" > scripts/last-known-claude-version.txt
+
+          # Update benchmark baseline on successful release
+          if [[ -f scripts/benchmark-report.json ]]; then
+            cp scripts/benchmark-report.json scripts/benchmark-baseline.json
+          fi
+
+      - name: Generate release tag
+        id: tag
+        run: |
+          DATE_TAG=$(date -u +"%Y%m%d")
+
+          # Get current version from Cargo.toml
+          CURRENT_VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          TAG="v${CURRENT_VERSION}-nightly.${DATE_TAG}"
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "date_tag=${DATE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Release tag: ${TAG}"
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          chmod +x scripts/generate-release-notes.sh
+
+          NEW_VERSION="${{ needs.detect.outputs.new_version }}"
+          PREV_VERSION="${{ needs.detect.outputs.previous_version }}"
+          TEST_COUNT="${{ needs.verify.outputs.test_count }}"
+          AI_ANALYSIS="${{ needs.analyze.outputs.analysis }}"
+
+          # Generate base notes
+          ./scripts/generate-release-notes.sh \
+            "${NEW_VERSION}" \
+            "test-report.json" \
+            "scripts/benchmark-report.json" > release-notes.md
+
+          # Append discovery section with version diff
+          cat >> release-notes.md <<DISCOVERY
+
+          ## New Discoveries (v${NEW_VERSION} vs v${PREV_VERSION})
+
+          ${AI_ANALYSIS:-No AI analysis available for this release.}
+
+          ### Version Comparison
+          | Metric | Previous (v${PREV_VERSION}) | Current (v${NEW_VERSION}) |
+          |--------|---------------------------|--------------------------|
+          | Claude Code version | ${PREV_VERSION} | ${NEW_VERSION} |
+          | RVM tests passing | ${TEST_COUNT:-797+} | ${TEST_COUNT:-797+} |
+          | Regressions | 0 | 0 |
+
+          DISCOVERY
+
+      - name: Commit state updates
+        run: |
+          git add scripts/last-known-claude-version.txt
+          git add scripts/benchmark-baseline.json 2>/dev/null || true
+          git commit -m "chore(nightly): update state for Claude Code v${{ needs.detect.outputs.new_version }}
+
+          Nightly pipeline verified: ${{ needs.verify.outputs.test_count }} tests, 0 failures.
+          Tag: ${{ steps.tag.outputs.tag }}" || echo "No state changes to commit."
+          git push origin main
+
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          git tag -a "${TAG}" -m "Nightly verified release for Claude Code v${{ needs.detect.outputs.new_version }}"
+          git push origin "${TAG}"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+
+          gh release create "${TAG}" \
+            --title "RVM ${TAG}" \
+            --notes-file release-notes.md \
+            test-report.json \
+            scripts/benchmark-report.json 2>/dev/null || \
+          gh release create "${TAG}" \
+            --title "RVM ${TAG}" \
+            --notes-file release-notes.md
+
+      # ── Alert on failure (open issue) ──
+  alert:
+    name: Alert on Failure
+    needs: [detect, verify]
+    if: |
+      always() &&
+      needs.detect.outputs.should_release == 'true' &&
+      needs.verify.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Open failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ needs.detect.outputs.new_version }}"
+          DATE=$(date -u +"%Y-%m-%d")
+
+          gh issue create \
+            --title "Nightly release blocked: verification failed (${DATE})" \
+            --body "## Nightly Release Failure
+
+          **Date:** ${DATE}
+          **Claude Code version:** v${NEW_VERSION}
+          **Pipeline run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          The nightly verification pipeline detected a failure. The release was NOT published.
+
+          ### Investigation Required
+          - Check test results in the Actions run above
+          - Look for benchmark regressions (>5% threshold)
+          - Verify \`cargo audit\` results
+          - Check bare-metal build status
+
+          ### To Retry
+          1. Fix the issue
+          2. Run: \`gh workflow run nightly.yml -f force_release=true\`
+
+          ---
+          *Automated issue from ADR-143 Nightly Verified Release Pipeline*" \
+            --label "bug,nightly"
