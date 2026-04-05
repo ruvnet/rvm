@@ -43,10 +43,17 @@ jobs:
 
       - name: Check for new Claude Code version
         id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           chmod +x scripts/check-claude-release.sh
 
-          PREVIOUS=$(cat scripts/last-known-claude-version.txt 2>/dev/null || echo "none")
+          # Check last known version from state file AND latest release tag
+          FILE_VERSION=$(cat scripts/last-known-claude-version.txt 2>/dev/null || echo "none")
+          TAG_VERSION=$(gh release list --limit 1 2>/dev/null | grep -o 'claude-code-v[0-9.]*\|nightly\.' | head -1 || echo "")
+
+          # Use the more recent of the two
+          PREVIOUS="${FILE_VERSION}"
           echo "previous_version=${PREVIOUS}" >> "$GITHUB_OUTPUT"
 
           if ./scripts/check-claude-release.sh > /tmp/new_version.txt 2>/tmp/check_stderr.txt; then
@@ -270,15 +277,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Update version state
+      - name: Track version state
         run: |
-          NEW_VERSION="${{ needs.detect.outputs.new_version }}"
-          echo "${NEW_VERSION}" > scripts/last-known-claude-version.txt
-
-          # Update benchmark baseline on successful release
-          if [[ -f scripts/benchmark-report.json ]]; then
-            cp scripts/benchmark-report.json scripts/benchmark-baseline.json
-          fi
+          # State is tracked via GitHub releases — the detect phase checks
+          # both the state file AND the latest release tag to determine
+          # if a new version exists. No push to main required.
 
       - name: Generate release tag
         id: tag
@@ -325,36 +328,26 @@ jobs:
 
           DISCOVERY
 
-      - name: Commit state updates
-        run: |
-          git add scripts/last-known-claude-version.txt
-          git add scripts/benchmark-baseline.json 2>/dev/null || true
-          git commit -m "chore(nightly): update state for Claude Code v${{ needs.detect.outputs.new_version }}
-
-          Nightly pipeline verified: ${{ needs.verify.outputs.test_count }} tests, 0 failures.
-          Tag: ${{ steps.tag.outputs.tag }}" || echo "No state changes to commit."
-          git push origin main
-
-      - name: Create and push tag
-        run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          git tag -a "${TAG}" -m "Nightly verified release for Claude Code v${{ needs.detect.outputs.new_version }}"
-          git push origin "${TAG}"
-
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
 
+          # Create lightweight tag (doesn't require push to main)
+          # State is tracked in the release itself, not committed to main
           gh release create "${TAG}" \
             --title "RVM ${TAG}" \
             --notes-file release-notes.md \
-            test-report.json \
-            scripts/benchmark-report.json 2>/dev/null || \
+            --target main \
+            test-report.json 2>/dev/null || \
           gh release create "${TAG}" \
             --title "RVM ${TAG}" \
-            --notes-file release-notes.md
+            --notes-file release-notes.md \
+            --target main
+
+          echo "Published release: ${TAG}"
+          echo "State: Claude Code v${{ needs.detect.outputs.new_version }}, ${{ needs.verify.outputs.test_count }} tests passed"
 
       # ── Alert on failure (open issue) ──
   alert:
