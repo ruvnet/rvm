@@ -79,6 +79,9 @@ pub use rvm_types as types;
 pub use rvm_wasm as wasm;
 /// Witness trail management.
 pub use rvm_witness as witness;
+/// GPU compute subsystem.
+#[cfg(feature = "gpu")]
+pub use rvm_gpu as gpu;
 
 /// RVM version string.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

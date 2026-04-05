@@ -4,3 +4,6 @@
 [submodule "ruvector"]
 	path = ruvector
 	url = https://github.com/ruvnet/RuVector.git
+[submodule "cuda-wasm"]
+	path = cuda-wasm
+	url = https://github.com/ruvnet/ruv-FANN.git

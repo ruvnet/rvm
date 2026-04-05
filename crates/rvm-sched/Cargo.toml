@@ -21,5 +21,6 @@ spin = { workspace = true }
 
 [features]
 default = []
+gpu = []
 std = ["rvm-types/std", "rvm-partition/std", "rvm-witness/std"]
 alloc = ["rvm-types/alloc", "rvm-partition/alloc", "rvm-witness/alloc"]

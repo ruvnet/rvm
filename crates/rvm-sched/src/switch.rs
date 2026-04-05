@@ -37,6 +37,14 @@ pub struct SwitchContext {
     /// General-purpose registers x0-x30 (cold path, accessed after
     /// the hot fields above).
     pub gp_regs: [u64; 31],
+    /// GPU context state: command queue head pointer.
+    /// Stores the GPU command queue head for this partition.
+    #[cfg(feature = "gpu")]
+    pub gpu_queue_head: u64,
+    /// GPU context state: GPU page table base address.
+    /// Stores the partition's GPU page table base.
+    #[cfg(feature = "gpu")]
+    pub gpu_pt_base: u64,
 }
 
 impl SwitchContext {
@@ -49,6 +57,10 @@ impl SwitchContext {
             spsr_el2: 0,
             sp_el1: 0,
             gp_regs: [0u64; 31],
+            #[cfg(feature = "gpu")]
+            gpu_queue_head: 0,
+            #[cfg(feature = "gpu")]
+            gpu_pt_base: 0,
         }
     }
 
@@ -69,6 +81,11 @@ impl SwitchContext {
         self.spsr_el2 = 0x3C5;
         // VTTBR_EL2: VMID in [55:48], table base in [47:1].
         self.vttbr_el2 = ((vmid as u64) << 48) | (s2_table_base & 0x0000_FFFF_FFFF_FFFE);
+        #[cfg(feature = "gpu")]
+        {
+            self.gpu_queue_head = 0;
+            self.gpu_pt_base = 0;
+        }
     }
 
     /// Extract the VMID from the VTTBR_EL2 field.
