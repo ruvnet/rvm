@@ -39,6 +39,32 @@ pub enum DeviceClass {
     Generic = 255,
 }
 
+/// GPU memory type classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum GpuMemoryType {
+    /// Device-local (VRAM), fastest for GPU access.
+    DeviceLocal = 0,
+    /// Host-visible, mappable by CPU.
+    HostVisible = 1,
+    /// Shared/unified memory accessible by both.
+    Unified = 2,
+}
+
+/// GPU command queue priority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum GpuQueuePriority {
+    /// Low priority (background compute).
+    Low = 0,
+    /// Normal priority.
+    Normal = 1,
+    /// High priority (real-time rendering/inference).
+    High = 2,
+    /// Realtime priority (coherence engine acceleration).
+    Realtime = 3,
+}
+
 /// A time-bounded, revocable device lease.
 #[derive(Debug, Clone, Copy)]
 pub struct DeviceLease {

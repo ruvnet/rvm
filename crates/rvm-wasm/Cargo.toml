@@ -21,5 +21,6 @@ rvm-witness = { workspace = true }
 
 [features]
 default = []
+gpu = []
 std = ["rvm-types/std", "rvm-partition/std", "rvm-cap/std", "rvm-witness/std"]
 alloc = ["rvm-types/alloc", "rvm-partition/alloc", "rvm-cap/alloc", "rvm-witness/alloc"]

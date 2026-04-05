@@ -30,6 +30,7 @@ rvm-coherence = { workspace = true }
 rvm-boot = { workspace = true }
 rvm-wasm = { workspace = true }
 rvm-security = { workspace = true }
+rvm-gpu = { workspace = true, optional = true }
 
 [features]
 default = ["crypto-sha256"]
@@ -62,6 +63,8 @@ alloc = [
     "rvm-wasm/alloc",
     "rvm-security/alloc",
 ]
+## Enable GPU compute subsystem.
+gpu = ["rvm-gpu"]
 ## Enable WebAssembly guest support.
 wasm = []
 ## Enable coherence engine integration.

@@ -12,11 +12,17 @@ members = [
     "crates/rvm-boot",
     "crates/rvm-wasm",
     "crates/rvm-security",
+    "crates/rvm-gpu",
     "crates/rvm-kernel",
     "tests",
     "benches",
 ]
 resolver = "2"
+exclude = [
+    "cuda-wasm",
+    "ruvector",
+    "rudevolution",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -42,6 +48,7 @@ rvm-boot = { path = "crates/rvm-boot" }
 rvm-wasm = { path = "crates/rvm-wasm" }
 rvm-security = { path = "crates/rvm-security" }
 rvm-kernel = { path = "crates/rvm-kernel" }
+rvm-gpu = { path = "crates/rvm-gpu" }
 
 # External dependencies
 lz4_flex = { version = "0.11", default-features = false }

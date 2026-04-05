@@ -177,6 +177,56 @@ impl ResourceQuota {
     }
 }
 
+/// GPU-specific resource quota per partition per epoch.
+#[derive(Debug, Clone, Copy)]
+pub struct GpuQuota {
+    /// Maximum GPU compute nanoseconds per epoch.
+    pub compute_ns_max: u64,
+    /// Used GPU compute nanoseconds.
+    pub compute_ns_used: u64,
+    /// Maximum GPU memory bytes.
+    pub memory_max: u64,
+    /// Used GPU memory bytes.
+    pub memory_used: u64,
+}
+
+impl GpuQuota {
+    /// Create a new GPU quota with the given limits.
+    #[must_use]
+    pub const fn new(compute_ns: u64, memory: u64) -> Self {
+        Self { compute_ns_max: compute_ns, compute_ns_used: 0, memory_max: memory, memory_used: 0 }
+    }
+
+    /// Check if a compute operation fits within budget.
+    pub fn check_compute(&mut self, ns: u64) -> RvmResult<()> {
+        if self.compute_ns_used.saturating_add(ns) > self.compute_ns_max {
+            return Err(RvmError::ResourceLimitExceeded);
+        }
+        self.compute_ns_used = self.compute_ns_used.saturating_add(ns);
+        Ok(())
+    }
+
+    /// Check if a memory allocation fits within budget.
+    pub fn check_memory(&mut self, bytes: u64) -> RvmResult<()> {
+        if self.memory_used.saturating_add(bytes) > self.memory_max {
+            return Err(RvmError::ResourceLimitExceeded);
+        }
+        self.memory_used = self.memory_used.saturating_add(bytes);
+        Ok(())
+    }
+
+    /// Release GPU memory.
+    pub fn release_memory(&mut self, bytes: u64) {
+        self.memory_used = self.memory_used.saturating_sub(bytes);
+    }
+
+    /// Reset for new epoch.
+    pub fn reset_epoch(&mut self) {
+        self.compute_ns_used = 0;
+        // memory_used persists across epochs (allocations are long-lived)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

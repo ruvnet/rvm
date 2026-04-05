@@ -1,0 +1,39 @@
+[package]
+name = "rvm-gpu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "GPU compute subsystem for the RVM microhypervisor"
+keywords = ["hypervisor", "gpu", "compute", "no_std"]
+categories = ["no-std", "embedded", "os"]
+publish = false
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+
+# cuda-rust-wasm: CUDA to Rust transpiler with WebGPU/WASM support
+# Source: https://github.com/ruvnet/ruv-FANN (submodule at cuda-wasm/)
+# Published: https://crates.io/crates/cuda-rust-wasm
+[dependencies.cuda-rust-wasm]
+version = "0.1.7"
+default-features = false
+optional = true
+
+[features]
+default = []
+std = ["rvm-types/std"]
+alloc = ["rvm-types/alloc"]
+# GPU backends (via cuda-rust-wasm crate)
+webgpu = ["cuda-rust-wasm/webgpu"]
+cuda = ["cuda-rust-wasm/cuda-backend"]
+opencl = ["cuda-rust-wasm/opencl-backend"]
+vulkan = ["cuda-rust-wasm/vulkan"]
+wasm-simd = ["cuda-rust-wasm/wasm-simd"]
+# Metal backend (macOS/iOS — uses WebGPU Metal translation layer)
+metal = ["webgpu"]

@@ -28,6 +28,16 @@ pub enum HostFunction {
     GetTime = 6,
     /// Return the caller's agent identifier.
     GetId = 7,
+    /// Submit a GPU compute kernel for execution.
+    GpuLaunch = 8,
+    /// Allocate GPU buffer memory.
+    GpuAlloc = 9,
+    /// Free GPU buffer memory.
+    GpuFree = 10,
+    /// Copy data between CPU and GPU buffers.
+    GpuTransfer = 11,
+    /// Wait for GPU operation to complete.
+    GpuSync = 12,
 }
 
 impl HostFunction {
@@ -43,6 +53,34 @@ impl HostFunction {
             Self::Yield => CapRights::READ,
             Self::GetTime => CapRights::READ,
             Self::GetId => CapRights::READ,
+            Self::GpuLaunch => CapRights::EXECUTE.union(CapRights::WRITE),
+            Self::GpuAlloc => CapRights::WRITE,
+            Self::GpuFree => CapRights::WRITE,
+            Self::GpuTransfer => CapRights::READ.union(CapRights::WRITE),
+            Self::GpuSync => CapRights::READ,
+        }
+    }
+
+    /// Try to convert a raw `u8` value to a `HostFunction` variant.
+    ///
+    /// Returns `None` if the value does not correspond to a known host function.
+    #[must_use]
+    pub const fn from_u8(val: u8) -> Option<Self> {
+        match val {
+            0 => Some(Self::Send),
+            1 => Some(Self::Receive),
+            2 => Some(Self::Alloc),
+            3 => Some(Self::Free),
+            4 => Some(Self::Spawn),
+            5 => Some(Self::Yield),
+            6 => Some(Self::GetTime),
+            7 => Some(Self::GetId),
+            8 => Some(Self::GpuLaunch),
+            9 => Some(Self::GpuAlloc),
+            10 => Some(Self::GpuFree),
+            11 => Some(Self::GpuTransfer),
+            12 => Some(Self::GpuSync),
+            _ => None,
         }
     }
 }
@@ -154,6 +192,48 @@ pub trait HostContext {
     fn get_time(&self) -> u64 {
         0 // stub: no real timer
     }
+
+    /// Submit a GPU compute kernel for execution.
+    ///
+    /// `kernel_id` identifies the compiled kernel, `config` encodes grid/block dimensions.
+    /// Returns a handle for the submitted operation.
+    #[cfg(feature = "gpu")]
+    fn gpu_launch(&mut self, agent: AgentId, kernel_id: u64, config: u64) -> RvmResult<u64> {
+        let _ = (agent, kernel_id, config);
+        Err(RvmError::InternalError) // stub: GPU not available
+    }
+
+    /// Allocate GPU buffer memory.
+    ///
+    /// Returns a buffer handle for the allocated region of `size` bytes.
+    #[cfg(feature = "gpu")]
+    fn gpu_alloc(&mut self, agent: AgentId, size: u64) -> RvmResult<u64> {
+        let _ = (agent, size);
+        Err(RvmError::InternalError) // stub: GPU not available
+    }
+
+    /// Free a previously allocated GPU buffer.
+    #[cfg(feature = "gpu")]
+    fn gpu_free(&mut self, agent: AgentId, buffer_id: u64) -> RvmResult<u64> {
+        let _ = (agent, buffer_id);
+        Err(RvmError::InternalError) // stub: GPU not available
+    }
+
+    /// Copy data between CPU and GPU buffers.
+    ///
+    /// `src` and `dst` are buffer handles, `size` is the byte count.
+    #[cfg(feature = "gpu")]
+    fn gpu_transfer(&mut self, agent: AgentId, src: u64, dst: u64, size: u64) -> RvmResult<u64> {
+        let _ = (agent, src, dst, size);
+        Err(RvmError::InternalError) // stub: GPU not available
+    }
+
+    /// Wait for all pending GPU operations for this agent to complete.
+    #[cfg(feature = "gpu")]
+    fn gpu_sync(&mut self, agent: AgentId) -> RvmResult<u64> {
+        let _ = agent;
+        Err(RvmError::InternalError) // stub: GPU not available
+    }
 }
 
 /// Default stub host context for testing.
@@ -209,6 +289,36 @@ pub fn dispatch_host_call<H: HostContext>(
             Ok(v) => HostCallResult::Success(v),
             Err(e) => HostCallResult::Error(e),
         },
+        #[cfg(feature = "gpu")]
+        HostFunction::GpuLaunch => match ctx.gpu_launch(agent_id, args.arg0, args.arg1) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
+        #[cfg(feature = "gpu")]
+        HostFunction::GpuAlloc => match ctx.gpu_alloc(agent_id, args.arg0) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
+        #[cfg(feature = "gpu")]
+        HostFunction::GpuFree => match ctx.gpu_free(agent_id, args.arg0) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
+        #[cfg(feature = "gpu")]
+        HostFunction::GpuTransfer => match ctx.gpu_transfer(agent_id, args.arg0, args.arg1, args.arg2) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
+        #[cfg(feature = "gpu")]
+        HostFunction::GpuSync => match ctx.gpu_sync(agent_id) {
+            Ok(v) => HostCallResult::Success(v),
+            Err(e) => HostCallResult::Error(e),
+        },
+        #[cfg(not(feature = "gpu"))]
+        HostFunction::GpuLaunch | HostFunction::GpuAlloc | HostFunction::GpuFree
+        | HostFunction::GpuTransfer | HostFunction::GpuSync => {
+            HostCallResult::Error(RvmError::InternalError)
+        }
     }
 }
 
