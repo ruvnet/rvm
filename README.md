@@ -3,10 +3,13 @@
 [![Rust](https://img.shields.io/badge/Rust-1.77+-orange.svg)](https://www.rust-lang.org)
 [![no_std](https://img.shields.io/badge/no__std-compatible-green.svg)](https://doc.rust-lang.org/reference/names/preludes.html)
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
-[![ADR](https://img.shields.io/badge/ADRs-132--141-purple.svg)](../../docs/adr/)
+[![ADR](https://img.shields.io/badge/ADRs-132--143-purple.svg)](docs/adr/)
+[![Nightly](https://img.shields.io/badge/Nightly-Verified%20Releases-brightgreen.svg)](https://github.com/ruvnet/rvm/releases)
 [![EPIC](https://img.shields.io/badge/EPIC-ruvnet%2FRuVector%23328-brightgreen.svg)](https://github.com/ruvnet/RuVector/issues/328)
 
 ### **Agents don't fit in VMs. They need something that understands how they think.**
+
+> **Nightly verified releases** — RVM automatically detects new [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) releases, runs 797+ tests and benchmarks to prove zero regressions, and publishes verified builds with AI-powered discovery analysis. See [Releases](https://github.com/ruvnet/rvm/releases) | [ADR-143](docs/adr/ADR-143-nightly-verified-release-pipeline.md) | [pi.ruv.io](https://pi.ruv.io)
 
 > Part of the [RuVector](https://github.com/ruvnet/RuVector) ecosystem. Uses [RuVix](../../crates/ruvix/) kernel primitives and [RVF](../../crates/rvf/) package format. Designed for [Cognitum](https://cognitum.one) Seed, Appliance, and future chip targets.
 
