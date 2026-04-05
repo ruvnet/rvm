@@ -1,0 +1,22 @@
+{
+  "name": "rvm-docs-mcp",
+  "version": "1.0.0",
+  "description": "MCP server and CLI for RVM documentation search, navigation, and cross-reference",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "rvm-docs": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "cli": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.0.0"
+  }
+}
