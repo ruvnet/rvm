@@ -459,8 +459,8 @@ brew install qemu  # macOS
 ### Quick Start (5 Minutes)
 
 ```bash
-# 1. Clone and verify
-git clone https://github.com/ruvnet/rvm.git && cd rvm
+# 1. Clone and verify (--recurse-submodules pulls ruvector + rudevolution)
+git clone --recurse-submodules https://github.com/ruvnet/rvm.git && cd rvm
 cargo test --workspace --lib    # 797 tests, 0 failures
 
 # 2. Run benchmarks
@@ -570,14 +570,40 @@ node dist/cli.js h "deploy"   # howto
 
 ## RuVector Integration
 
-| Crate | Role in RVM |
-|-------|-------------|
-| [`ruvector-mincut`](../../crates/ruvector-mincut/) | Partition placement and isolation decisions |
-| [`ruvector-sparsifier`](../../crates/ruvector-sparsifier/) | Compressed shadow graph for Laplacian operations |
-| [`ruvector-solver`](../../crates/ruvector-solver/) | Effective resistance → coherence scores |
-| [`ruvector-coherence`](../../crates/ruvector-coherence/) | Spectral coherence tracking |
-| [`ruvix-*`](../../crates/ruvix/) | Kernel primitives (Task, Capability, Region, Queue, Timer, Proof) |
-| [`rvf`](../../crates/rvf/) | Package format for boot images, checkpoints, and cold storage |
+The full [RuVector](https://github.com/ruvnet/RuVector) ecosystem is available via the `ruvector/` submodule. See [Integration Map](docs/RUVECTOR-INTEGRATION.md) for detailed path references.
+
+| Crate | Submodule Path | Role in RVM |
+|-------|----------------|-------------|
+| [`ruvector-mincut`](ruvector/crates/ruvector-mincut/) | `ruvector/crates/ruvector-mincut/` | Partition placement and isolation decisions |
+| [`ruvector-sparsifier`](ruvector/crates/ruvector-sparsifier/) | `ruvector/crates/ruvector-sparsifier/` | Compressed shadow graph for Laplacian operations |
+| [`ruvector-solver`](ruvector/crates/ruvector-solver/) | `ruvector/crates/ruvector-solver/` | Effective resistance → coherence scores |
+| [`ruvector-coherence`](ruvector/crates/ruvector-coherence/) | `ruvector/crates/ruvector-coherence/` | Spectral coherence tracking |
+| [`ruvix`](ruvector/crates/ruvix/) | `ruvector/crates/ruvix/` | Kernel primitives (Task, Capability, Region, Queue, Timer, Proof) |
+| [`rvf`](ruvector/crates/rvf/) | `ruvector/crates/rvf/` | Package format for boot images, checkpoints, and cold storage |
+
+### RVF Package Ecosystem (22 crates)
+
+| Crate | Path | Purpose |
+|-------|------|---------|
+| `rvf-types` | [`ruvector/crates/rvf/rvf-types/`](ruvector/crates/rvf/rvf-types/) | Core types, manifest, vectors |
+| `rvf-crypto` | [`ruvector/crates/rvf/rvf-crypto/`](ruvector/crates/rvf/rvf-crypto/) | Cryptographic signing/verification |
+| `rvf-index` | [`ruvector/crates/rvf/rvf-index/`](ruvector/crates/rvf/rvf-index/) | HNSW vector indexing |
+| `rvf-kernel` | [`ruvector/crates/rvf/rvf-kernel/`](ruvector/crates/rvf/rvf-kernel/) | Kernel-level RVF integration |
+| `rvf-runtime` | [`ruvector/crates/rvf/rvf-runtime/`](ruvector/crates/rvf/rvf-runtime/) | Runtime execution environment |
+| `rvf-wasm` | [`ruvector/crates/rvf/rvf-wasm/`](ruvector/crates/rvf/rvf-wasm/) | WASM runtime for RVF containers |
+| `rvf-quant` | [`ruvector/crates/rvf/rvf-quant/`](ruvector/crates/rvf/rvf-quant/) | Quantization for memory reduction |
+| `rvf-federation` | [`ruvector/crates/rvf/rvf-federation/`](ruvector/crates/rvf/rvf-federation/) | Federated distribution |
+
+### Related ADRs & Research
+
+| Resource | Path |
+|----------|------|
+| Core architecture | [`ruvector/docs/adr/ADR-001-ruvector-core-architecture.md`](ruvector/docs/adr/ADR-001-ruvector-core-architecture.md) |
+| Coherence engine | [`ruvector/docs/adr/ADR-014-coherence-engine.md`](ruvector/docs/adr/ADR-014-coherence-engine.md) |
+| Memory management | [`ruvector/docs/adr/ADR-006-memory-management.md`](ruvector/docs/adr/ADR-006-memory-management.md) |
+| Security review | [`ruvector/docs/adr/ADR-007-security-review-technical-debt.md`](ruvector/docs/adr/ADR-007-security-review-technical-debt.md) |
+| Architecture docs | [`ruvector/docs/architecture/`](ruvector/docs/architecture/) |
+| Benchmarks | [`ruvector/docs/benchmarks/`](ruvector/docs/benchmarks/) |
 
 ---
 

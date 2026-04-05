@@ -1,3 +1,6 @@
 [submodule "rudevolution"]
 	path = rudevolution
 	url = https://github.com/ruvnet/rudevolution.git
+[submodule "ruvector"]
+	path = ruvector
+	url = https://github.com/ruvnet/RuVector.git
