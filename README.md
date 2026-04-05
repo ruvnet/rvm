@@ -450,6 +450,121 @@ brew install qemu  # macOS
 
 ---
 
+<details>
+<summary><b>📖 User Guide &amp; Tutorial</b></summary>
+
+### Quick Start (5 Minutes)
+
+```bash
+# 1. Clone and verify
+git clone https://github.com/ruvnet/rvm.git && cd rvm
+cargo test --workspace --lib    # 797 tests, 0 failures
+
+# 2. Run benchmarks
+cargo bench -p rvm-benches      # 11 criterion benchmarks
+
+# 3. Build for bare metal
+rustup target add aarch64-unknown-none
+cargo install cargo-binutils && rustup component add llvm-tools
+make build                      # AArch64 release binary
+
+# 4. Boot in QEMU
+brew install qemu               # macOS (or apt install qemu-system-aarch64)
+make run                        # Boots at 0x4000_0000, PL011 UART output
+
+# 5. Use as a library
+# Add to Cargo.toml: rvm-kernel = { path = "crates/rvm-kernel" }
+```
+
+```rust
+use rvm_kernel::{
+    types, hal, cap, witness, proof, partition,
+    sched, memory, coherence, boot, wasm, security,
+};
+```
+
+### Full User Guide
+
+The [`userguide/`](userguide/) directory contains 17 chapters covering every subsystem:
+
+| Chapter | Topic |
+|---------|-------|
+| [01 Quick Start](userguide/01-quickstart.md) | Build, test, and boot in 5 minutes |
+| [02 Core Concepts](userguide/02-core-concepts.md) | Partitions, capabilities, witnesses, proofs, coherence |
+| [03 Architecture](userguide/03-architecture.md) | Layer diagram, data flow, boot sequence, feature flags |
+| [04 Crate Reference](userguide/04-crate-reference.md) | All 13 crates with types, APIs, and dependencies |
+| [05 Capabilities & Proofs](userguide/05-capabilities-proofs.md) | 7 rights, delegation trees, 3 proof tiers, TEE |
+| [06 Witness & Audit](userguide/06-witness-audit.md) | 64-byte records, hash chains, signing, querying |
+| [07 Partitions & Scheduling](userguide/07-partitions-scheduling.md) | Lifecycle, IPC, split/merge, 2-signal scheduler |
+| [08 Memory Model](userguide/08-memory-model.md) | 4 tiers, buddy allocator, reconstruction |
+| [09 WASM Agents](userguide/09-wasm-agents.md) | Module validation, 7-state lifecycle, migration |
+| [10 Security](userguide/10-security.md) | 3-stage gate, attestation, audit results |
+| [11 Performance](userguide/11-performance.md) | 11 benchmarks, build profiles, tuning |
+| [12 Bare Metal](userguide/12-bare-metal.md) | Linker script, QEMU, measured boot, Seed/Appliance |
+| [13 Advanced & Exotic](userguide/13-advanced-exotic.md) | 6 novel capabilities, fault rollback, RuVector |
+| [14 Troubleshooting](userguide/14-troubleshooting.md) | 12 categories of common issues |
+| [15 Glossary](userguide/15-glossary.md) | 60+ terms with cross-references |
+| [Cross-Reference](userguide/cross-reference.md) | Concept index, API finder, "I want to..." tasks |
+
+</details>
+
+<details>
+<summary><b>🔌 MCP Documentation Tools</b></summary>
+
+RVM ships with an MCP (Model Context Protocol) server and CLI for AI-assisted documentation search and navigation.
+
+### Installation
+
+```bash
+cd userguide/mcp
+npm install && npm run build
+```
+
+### Register with Claude Code
+
+```bash
+claude mcp add rvm-docs -- node /path/to/rvm/userguide/mcp/dist/index.js
+```
+
+### MCP Tools (6 tools)
+
+| Tool | Description | Example |
+|------|-------------|---------|
+| `docs_search` | Full-text keyword search across all docs | `{ "query": "witness chain" }` |
+| `docs_navigate` | Browse table of contents or read a chapter | `{ "chapter": "05" }` |
+| `docs_xref` | Find all cross-references for a concept | `{ "concept": "coherence" }` |
+| `docs_glossary` | Look up a term definition | `{ "term": "partition" }` |
+| `docs_api` | Find documentation for an RVM type/function | `{ "symbol": "SecurityGate" }` |
+| `docs_howto` | Task-oriented "I want to..." search | `{ "task": "build rvm" }` |
+
+### CLI Usage
+
+```bash
+cd userguide/mcp
+node dist/cli.js search "capability"      # Full-text search
+node dist/cli.js nav                       # Table of contents
+node dist/cli.js nav 05                    # Read chapter 05
+node dist/cli.js xref "witness"            # Cross-references
+node dist/cli.js glossary "partition"       # Term lookup
+node dist/cli.js api "CapToken"            # API documentation
+node dist/cli.js howto "build rvm"         # Task-oriented guide
+```
+
+### Shorthand Aliases
+
+```bash
+node dist/cli.js s "proof"    # search
+node dist/cli.js n 03         # navigate
+node dist/cli.js x "memory"   # xref
+node dist/cli.js g "EMA"      # glossary
+node dist/cli.js a "verify"   # api
+node dist/cli.js h "deploy"   # howto
+```
+
+</details>
+
+---
+
 ## RuVector Integration
 
 | Crate | Role in RVM |
