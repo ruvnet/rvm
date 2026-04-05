@@ -289,6 +289,9 @@ pub fn dispatch_host_call<H: HostContext>(
             Ok(v) => HostCallResult::Success(v),
             Err(e) => HostCallResult::Error(e),
         },
+        // GPU dispatch: Budget enforcement is the responsibility of the
+        // HostContext implementor. The GpuContext::try_launch/try_alloc/
+        // try_transfer methods provide atomic check-and-record for this purpose.
         #[cfg(feature = "gpu")]
         HostFunction::GpuLaunch => match ctx.gpu_launch(agent_id, args.arg0, args.arg1) {
             Ok(v) => HostCallResult::Success(v),

@@ -72,11 +72,11 @@ impl From<GpuError> for RvmError {
             GpuError::BudgetExceeded
             | GpuError::BufferTooLarge
             | GpuError::QueueFull => RvmError::ResourceLimitExceeded,
-            GpuError::KernelTimeout => RvmError::MigrationTimeout,
-            GpuError::KernelCompilationFailed
+            GpuError::KernelTimeout
+            | GpuError::KernelCompilationFailed
             | GpuError::InvalidLaunchConfig
-            | GpuError::TransferFailed => RvmError::InternalError,
-            GpuError::IommuViolation => RvmError::MemoryOverlap,
+            | GpuError::TransferFailed
+            | GpuError::IommuViolation => RvmError::InternalError,
             GpuError::CapabilityDenied => RvmError::InsufficientCapability,
             GpuError::Unsupported => RvmError::Unsupported,
         }
@@ -94,7 +94,8 @@ mod tests {
         assert_eq!(RvmError::from(GpuError::BudgetExceeded), RvmError::ResourceLimitExceeded);
         assert_eq!(RvmError::from(GpuError::CapabilityDenied), RvmError::InsufficientCapability);
         assert_eq!(RvmError::from(GpuError::Unsupported), RvmError::Unsupported);
-        assert_eq!(RvmError::from(GpuError::IommuViolation), RvmError::MemoryOverlap);
+        assert_eq!(RvmError::from(GpuError::IommuViolation), RvmError::InternalError);
+        assert_eq!(RvmError::from(GpuError::KernelTimeout), RvmError::InternalError);
     }
 
     #[test]

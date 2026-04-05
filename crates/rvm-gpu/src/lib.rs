@@ -38,7 +38,6 @@
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
 #![allow(
-    clippy::cast_possible_truncation,
     clippy::cast_lossless,
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,

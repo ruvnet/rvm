@@ -81,7 +81,7 @@ pub use partition::{
 pub use memory::{MemoryRegion, MemoryTier, OwnedRegionId, RegionPlacementWeights, RegionPolicy};
 
 // --- Device types ---
-pub use device::{DeviceClass, DeviceLease, DeviceLeaseId};
+pub use device::{DeviceClass, DeviceLease, DeviceLeaseId, GpuMemoryType, GpuQueuePriority};
 
 // --- Proof types ---
 pub use proof::{ProofResult, ProofTier, ProofToken};

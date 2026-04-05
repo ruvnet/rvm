@@ -177,6 +177,7 @@ Layer 0: Machine Entry (assembly, <500 LoC)
 | `rvm-wasm` | Optional WebAssembly guest runtime |
 | `rvm-security` | Unified security gate: capability check + proof verification + witness log |
 | `rvm-kernel` | Full integration: coherence engine, IPC→graph feeding, scheduler, split/merge, security gates, tier management |
+| `rvm-gpu` | GPU compute subsystem: device, context, kernel, buffer, queue, budget (optional, feature-gated) |
 
 ### Dependency Graph
 
@@ -279,9 +280,10 @@ Run `cargo bench` for full criterion results with HTML reports.
 | `rvm-wasm` | 33 | 7-state agent lifecycle, `HostContext` trait, section parser (13 section types), migration |
 | `rvm-security` | 45 | Unified security gate (P1/P2/P3), `SignedSecurityGate` with per-link signature verification, input validation, attestation chain, DMA budget |
 | `rvm-kernel` | 62 | Full integration: IPC→coherence, scheduler, split/merge, security gates, degraded mode, device leases, tier mgmt |
+| `rvm-gpu` | 65 | Device/context/kernel/buffer/queue management, 4-dimensional budget, coherence acceleration configs |
 | **Integration** | 48 | 17 e2e scenarios: agent lifecycle, split pressure, memory tiers, cap chain, boot timing |
 | **Benchmarks** | 21 | Criterion benchmarks for all performance-critical paths |
-| **Total** | **648** | **0 failures, 0 clippy warnings** |
+| **Total** | **713** | **0 failures, 0 clippy warnings** |
 
 ### Security Audit Results
 
@@ -394,6 +396,115 @@ Capability-based isolation, proof-gated execution, and witness attestation on mi
 **Witness-Native Audit.** 64-byte records for every mutating operation. Hash-chained for tamper evidence. Deterministic replay from checkpoint + witness log.
 
 **Failure Classification.** F1 (agent restart) → F2 (partition reconstruct) → F3 (memory rollback) → F4 (kernel reboot). Each escalation witnessed.
+
+</details>
+
+<details>
+<summary><b>GPU Compute Support (ADR-144)</b></summary>
+
+### Overview
+
+RVM provides capability-gated, proof-verified, witness-logged GPU compute access for partitions. GPU support is **feature-gated** — zero cost when disabled.
+
+### Quick Start
+
+```rust
+// Enable in Cargo.toml
+// rvm-kernel = { features = ["gpu"] }
+
+use rvm_kernel::gpu::{
+    context::GpuContext,
+    kernel::LaunchConfig,
+    budget::GpuBudget,
+    queue::{GpuQueue, QueueCommand},
+    buffer::{GpuBuffer, BufferUsage},
+    GpuTier, GpuStatus,
+};
+use rvm_types::PartitionId;
+
+// Create a GPU context for a partition
+let budget = GpuBudget::new(
+    1_000_000_000,  // 1 second compute budget
+    512 * 1024 * 1024,  // 512 MB memory
+    1_000_000_000,  // 1 GB transfer budget
+    1000,  // max 1000 kernel launches per epoch
+);
+let ctx = GpuContext::new(PartitionId::new(1), 0, budget);
+
+// Configure a kernel launch (3D workgroups)
+let config = LaunchConfig {
+    workgroups: [64, 64, 1],      // 64x64 workgroups
+    workgroup_size: [256, 1, 1],  // 256 threads each
+    shared_memory_bytes: 16384,    // 16 KB shared memory
+    timeout_ns: 100_000_000,       // 100ms timeout
+};
+assert!(config.validate().is_ok());
+println!("Total threads: {}", config.total_threads()); // 1,048,576
+
+// Create and manage GPU buffers
+let buffer = GpuBuffer {
+    id: BufferId::new(1),
+    partition_id: PartitionId::new(1),
+    size_bytes: 1024 * 1024,  // 1 MB
+    usage: BufferUsage::Storage,
+    host_mapped: false,
+};
+```
+
+### Backends
+
+| Backend | Feature Flag | Platform | Use Case |
+|---------|-------------|----------|----------|
+| CUDA | `cuda` | NVIDIA GPUs | ML inference, HPC |
+| WebGPU | `webgpu` | Cross-platform | Portable compute |
+| Metal | `metal` | Apple Silicon | macOS/iOS acceleration |
+| OpenCL | `opencl` | Any GPU | Legacy hardware |
+| Vulkan | `vulkan` | Any GPU | Low-level compute |
+| WASM SIMD | `wasm-simd` | CPU only | Seed profile fallback |
+
+### Architecture
+
+```
+WASM Agent ──→ HostFunction::GpuLaunch ──→ SecurityGate ──→ GpuContext ──→ GPU
+                                              │
+                              CapRights::EXECUTE + WRITE
+                              DmaBudget check
+                              WitnessRecord emission
+```
+
+### Security Model
+
+- **Capability-gated**: requires `EXECUTE | WRITE` rights on device
+- **IOMMU isolated**: per-partition GPU page tables
+- **DMA budgeted**: bytes transferred per epoch
+- **Witnessed**: every kernel launch, transfer, and allocation logged
+- **Timeout enforced**: kernel execution deadline (100ms default)
+- **Budget enforcement**: 4 dimensions — compute time, memory, transfers, launches
+
+### Coherence Engine Acceleration
+
+MinCut and scoring algorithms can be offloaded to GPU:
+
+```rust
+use rvm_gpu::accel::{GpuMinCutConfig, GpuScoringConfig};
+
+let mincut_cfg = GpuMinCutConfig {
+    max_nodes: 32,
+    budget_iterations: 31,
+    use_gpu: true,
+};
+
+let scoring_cfg = GpuScoringConfig {
+    max_partitions: 256,
+    use_gpu: true,
+};
+```
+
+### Source
+
+GPU compute is powered by [cuda-rust-wasm](https://crates.io/crates/cuda-rust-wasm) ([source](https://github.com/ruvnet/ruv-FANN)), providing CUDA→Rust transpilation with WebGPU/Metal/Vulkan backends. Full source available in the `cuda-wasm/` submodule.
+
+See [ADR-144](docs/adr/ADR-144-gpu-compute-support.md) for the complete architecture decision record.
 
 </details>
 

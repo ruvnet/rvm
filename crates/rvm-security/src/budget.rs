@@ -178,6 +178,10 @@ impl ResourceQuota {
 }
 
 /// GPU-specific resource quota per partition per epoch.
+///
+/// Tracks all four budget dimensions matching [`GpuBudget`](rvm_gpu::GpuBudget):
+/// compute time, memory, transfer bandwidth, and kernel launch count.
+/// All arithmetic uses `checked_add` to prevent overflow-based budget bypass.
 #[derive(Debug, Clone, Copy)]
 pub struct GpuQuota {
     /// Maximum GPU compute nanoseconds per epoch.
@@ -188,31 +192,96 @@ pub struct GpuQuota {
     pub memory_max: u64,
     /// Used GPU memory bytes.
     pub memory_used: u64,
+    /// Maximum host-device transfer bandwidth per epoch in bytes.
+    pub transfer_bytes_max: u64,
+    /// Transfer bandwidth consumed in the current epoch.
+    pub transfer_bytes_used: u64,
+    /// Maximum kernel launches per epoch.
+    pub kernel_launches_max: u32,
+    /// Kernel launches consumed in the current epoch.
+    pub kernel_launches_used: u32,
 }
 
 impl GpuQuota {
-    /// Create a new GPU quota with the given limits.
+    /// Create a new GPU quota with the given limits for all four dimensions.
     #[must_use]
-    pub const fn new(compute_ns: u64, memory: u64) -> Self {
-        Self { compute_ns_max: compute_ns, compute_ns_used: 0, memory_max: memory, memory_used: 0 }
+    pub const fn new(
+        compute_ns: u64,
+        memory: u64,
+        transfer_bytes: u64,
+        kernel_launches: u32,
+    ) -> Self {
+        Self {
+            compute_ns_max: compute_ns,
+            compute_ns_used: 0,
+            memory_max: memory,
+            memory_used: 0,
+            transfer_bytes_max: transfer_bytes,
+            transfer_bytes_used: 0,
+            kernel_launches_max: kernel_launches,
+            kernel_launches_used: 0,
+        }
     }
 
-    /// Check if a compute operation fits within budget.
+    /// Check if a compute operation fits within budget and record it.
     pub fn check_compute(&mut self, ns: u64) -> RvmResult<()> {
-        if self.compute_ns_used.saturating_add(ns) > self.compute_ns_max {
+        let new_total = self
+            .compute_ns_used
+            .checked_add(ns)
+            .ok_or(RvmError::ResourceLimitExceeded)?;
+        if new_total > self.compute_ns_max {
             return Err(RvmError::ResourceLimitExceeded);
         }
-        self.compute_ns_used = self.compute_ns_used.saturating_add(ns);
+        self.compute_ns_used = new_total;
         Ok(())
     }
 
-    /// Check if a memory allocation fits within budget.
+    /// Check if a memory allocation fits within budget and record it.
     pub fn check_memory(&mut self, bytes: u64) -> RvmResult<()> {
-        if self.memory_used.saturating_add(bytes) > self.memory_max {
+        let new_total = self
+            .memory_used
+            .checked_add(bytes)
+            .ok_or(RvmError::ResourceLimitExceeded)?;
+        if new_total > self.memory_max {
             return Err(RvmError::ResourceLimitExceeded);
         }
-        self.memory_used = self.memory_used.saturating_add(bytes);
+        self.memory_used = new_total;
         Ok(())
+    }
+
+    /// Check if a transfer fits within budget and record it.
+    pub fn check_transfer(&mut self, bytes: u64) -> RvmResult<()> {
+        if bytes == 0 {
+            return Ok(());
+        }
+        let new_total = self
+            .transfer_bytes_used
+            .checked_add(bytes)
+            .ok_or(RvmError::ResourceLimitExceeded)?;
+        if new_total > self.transfer_bytes_max {
+            return Err(RvmError::ResourceLimitExceeded);
+        }
+        self.transfer_bytes_used = new_total;
+        Ok(())
+    }
+
+    /// Check if a kernel launch fits within budget and record it.
+    pub fn check_launch(&mut self) -> RvmResult<()> {
+        if self.kernel_launches_used >= self.kernel_launches_max {
+            return Err(RvmError::ResourceLimitExceeded);
+        }
+        self.kernel_launches_used += 1;
+        Ok(())
+    }
+
+    /// Record a transfer without a separate check (atomic check-and-record).
+    pub fn record_transfer(&mut self, bytes: u64) -> RvmResult<()> {
+        self.check_transfer(bytes)
+    }
+
+    /// Record a kernel launch without a separate check (atomic check-and-record).
+    pub fn record_launch(&mut self) -> RvmResult<()> {
+        self.check_launch()
     }
 
     /// Release GPU memory.
@@ -220,10 +289,13 @@ impl GpuQuota {
         self.memory_used = self.memory_used.saturating_sub(bytes);
     }
 
-    /// Reset for new epoch.
+    /// Reset per-epoch counters (compute, transfer, launches).
+    ///
+    /// Memory persists across epochs (allocations are long-lived).
     pub fn reset_epoch(&mut self) {
         self.compute_ns_used = 0;
-        // memory_used persists across epochs (allocations are long-lived)
+        self.transfer_bytes_used = 0;
+        self.kernel_launches_used = 0;
     }
 }
 

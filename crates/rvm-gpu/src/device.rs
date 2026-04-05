@@ -49,12 +49,34 @@ pub struct GpuDeviceInfo {
 impl GpuDeviceInfo {
     /// Return the device name as a `&str`, or an empty string if invalid UTF-8.
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn name_str(&self) -> &str {
         let len = self.name_len as usize;
         if len > GPU_NAME_MAX {
             return "";
         }
         core::str::from_utf8(&self.name[..len]).unwrap_or("")
+    }
+
+    /// Set the device name from a byte slice, validating length.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GpuError::InvalidLaunchConfig`] if `name` exceeds
+    /// the maximum device name length (64 bytes).
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn set_name(&mut self, name: &[u8]) -> Result<(), crate::error::GpuError> {
+        if name.len() > GPU_NAME_MAX {
+            return Err(crate::error::GpuError::InvalidLaunchConfig);
+        }
+        self.name[..name.len()].copy_from_slice(name);
+        // Zero out the rest
+        for byte in &mut self.name[name.len()..] {
+            *byte = 0;
+        }
+        // name.len() is guaranteed <= 64, which fits in u8
+        self.name_len = name.len() as u8;
+        Ok(())
     }
 }
 
@@ -172,5 +194,31 @@ mod tests {
         let dev = GpuDevice::default();
         assert_eq!(dev.info.id, 0);
         assert_eq!(dev.capabilities.warp_size, 32);
+    }
+
+    #[test]
+    fn set_name_valid() {
+        let mut info = GpuDeviceInfo::default();
+        assert!(info.set_name(b"MyGPU").is_ok());
+        assert_eq!(info.name_str(), "MyGPU");
+        assert_eq!(info.name_len, 5);
+    }
+
+    #[test]
+    fn set_name_max_length() {
+        let mut info = GpuDeviceInfo::default();
+        let name = [b'X'; 64];
+        assert!(info.set_name(&name).is_ok());
+        assert_eq!(info.name_len, 64);
+    }
+
+    #[test]
+    fn set_name_too_long() {
+        let mut info = GpuDeviceInfo::default();
+        let name = [b'X'; 65];
+        assert_eq!(
+            info.set_name(&name),
+            Err(crate::error::GpuError::InvalidLaunchConfig)
+        );
     }
 }

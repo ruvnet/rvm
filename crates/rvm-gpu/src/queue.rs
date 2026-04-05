@@ -89,13 +89,17 @@ impl GpuQueue {
     }
 
     /// Create a new empty queue with a custom maximum depth.
+    ///
+    /// The minimum allowed depth is 1. If `max_depth` is 0, it is
+    /// clamped to 1 to prevent creating an unusable queue.
     #[must_use]
     pub const fn with_max_depth(id: QueueId, partition_id: PartitionId, max_depth: u32) -> Self {
+        let effective_depth = if max_depth == 0 { 1 } else { max_depth };
         Self {
             id,
             partition_id,
             depth: 0,
-            max_depth,
+            max_depth: effective_depth,
             submitted: 0,
             completed: 0,
         }
@@ -115,11 +119,16 @@ impl GpuQueue {
 
     /// Enqueue a command, incrementing the depth and submitted count.
     ///
+    /// The command is validated before submission. Invalid commands
+    /// (e.g., a `KernelLaunch` without a `kernel_id`) are rejected.
+    ///
     /// # Errors
     ///
+    /// Returns a [`GpuError`] if the command fails validation.
     /// Returns [`GpuError::QueueFull`] if the queue has reached its
     /// maximum depth.
-    pub fn enqueue(&mut self, _command: &QueueCommand) -> Result<(), GpuError> {
+    pub fn enqueue(&mut self, command: &QueueCommand) -> Result<(), GpuError> {
+        command.validate()?;
         if self.is_full() {
             return Err(GpuError::QueueFull);
         }
@@ -129,11 +138,18 @@ impl GpuQueue {
     }
 
     /// Mark a command as completed, decrementing the depth.
-    pub fn complete_one(&mut self) {
-        if self.depth > 0 {
-            self.depth -= 1;
-            self.completed += 1;
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GpuError::DeviceNotReady`] if the queue has no
+    /// pending commands (underflow).
+    pub fn complete_one(&mut self) -> Result<(), GpuError> {
+        if self.depth == 0 {
+            return Err(GpuError::DeviceNotReady);
         }
+        self.depth -= 1;
+        self.completed += 1;
+        Ok(())
     }
 
     /// Return the number of commands currently in flight.
@@ -192,6 +208,18 @@ impl QueueCommand {
         }
     }
 
+    /// Create a buffer fill command.
+    #[must_use]
+    pub const fn buffer_fill(dst: BufferId, size: u64) -> Self {
+        Self {
+            cmd_type: CommandType::BufferFill,
+            kernel_id: None,
+            buffer_src: None,
+            buffer_dst: Some(dst),
+            size_bytes: size,
+        }
+    }
+
     /// Create a barrier command.
     #[must_use]
     pub const fn barrier() -> Self {
@@ -202,6 +230,48 @@ impl QueueCommand {
             buffer_dst: None,
             size_bytes: 0,
         }
+    }
+
+    /// Create a timestamp query command.
+    #[must_use]
+    pub const fn timestamp_query() -> Self {
+        Self {
+            cmd_type: CommandType::TimestampQuery,
+            kernel_id: None,
+            buffer_src: None,
+            buffer_dst: None,
+            size_bytes: 0,
+        }
+    }
+
+    /// Validate that the command's fields are consistent with its type.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GpuError::InvalidLaunchConfig`] if required fields are
+    /// missing for the given [`CommandType`].
+    pub const fn validate(&self) -> Result<(), GpuError> {
+        match self.cmd_type {
+            CommandType::KernelLaunch => {
+                if self.kernel_id.is_none() {
+                    return Err(GpuError::InvalidLaunchConfig);
+                }
+            }
+            CommandType::BufferCopy => {
+                if self.buffer_src.is_none() || self.buffer_dst.is_none() || self.size_bytes == 0 {
+                    return Err(GpuError::InvalidLaunchConfig);
+                }
+            }
+            CommandType::BufferFill => {
+                if self.buffer_dst.is_none() || self.size_bytes == 0 {
+                    return Err(GpuError::InvalidLaunchConfig);
+                }
+            }
+            CommandType::Barrier | CommandType::TimestampQuery => {
+                // Always valid
+            }
+        }
+        Ok(())
     }
 }
 
@@ -245,10 +315,23 @@ mod tests {
         let cmd = QueueCommand::barrier();
         q.enqueue(&cmd).unwrap();
         q.enqueue(&cmd).unwrap();
-        q.complete_one();
+        q.complete_one().unwrap();
         assert_eq!(q.depth, 1);
         assert_eq!(q.completed, 1);
         assert_eq!(q.submitted, 2);
+    }
+
+    #[test]
+    fn complete_one_underflow_returns_error() {
+        let mut q = GpuQueue::new(QueueId::new(0), test_partition());
+        assert_eq!(q.complete_one(), Err(GpuError::DeviceNotReady));
+    }
+
+    #[test]
+    fn with_max_depth_zero_clamps_to_one() {
+        let q = GpuQueue::with_max_depth(QueueId::new(0), test_partition(), 0);
+        assert_eq!(q.max_depth, 1);
+        assert!(q.can_submit());
     }
 
     #[test]
@@ -268,7 +351,7 @@ mod tests {
         let cmd = QueueCommand::barrier();
         q.enqueue(&cmd).unwrap();
         assert!(q.is_full());
-        q.complete_one();
+        q.complete_one().unwrap();
         assert!(!q.is_full());
         assert!(q.enqueue(&cmd).is_ok());
     }
@@ -294,8 +377,71 @@ mod tests {
         assert_eq!(copy.buffer_dst, Some(BufferId::new(2)));
         assert_eq!(copy.size_bytes, 4096);
 
+        let fill = QueueCommand::buffer_fill(BufferId::new(3), 1024);
+        assert_eq!(fill.cmd_type, CommandType::BufferFill);
+        assert_eq!(fill.buffer_dst, Some(BufferId::new(3)));
+        assert_eq!(fill.size_bytes, 1024);
+
         let barrier = QueueCommand::barrier();
         assert_eq!(barrier.cmd_type, CommandType::Barrier);
         assert!(barrier.kernel_id.is_none());
+
+        let ts = QueueCommand::timestamp_query();
+        assert_eq!(ts.cmd_type, CommandType::TimestampQuery);
+    }
+
+    #[test]
+    fn command_validate_kernel_launch_missing_id() {
+        let bad = QueueCommand {
+            cmd_type: CommandType::KernelLaunch,
+            kernel_id: None,
+            buffer_src: None,
+            buffer_dst: None,
+            size_bytes: 0,
+        };
+        assert_eq!(bad.validate(), Err(GpuError::InvalidLaunchConfig));
+    }
+
+    #[test]
+    fn command_validate_buffer_copy_missing_fields() {
+        // Missing src
+        let bad = QueueCommand {
+            cmd_type: CommandType::BufferCopy,
+            kernel_id: None,
+            buffer_src: None,
+            buffer_dst: Some(BufferId::new(1)),
+            size_bytes: 100,
+        };
+        assert_eq!(bad.validate(), Err(GpuError::InvalidLaunchConfig));
+
+        // Zero size
+        let bad2 = QueueCommand::buffer_copy(BufferId::new(0), BufferId::new(1), 0);
+        assert_eq!(bad2.validate(), Err(GpuError::InvalidLaunchConfig));
+    }
+
+    #[test]
+    fn command_validate_buffer_fill_missing_fields() {
+        let bad = QueueCommand {
+            cmd_type: CommandType::BufferFill,
+            kernel_id: None,
+            buffer_src: None,
+            buffer_dst: None,
+            size_bytes: 100,
+        };
+        assert_eq!(bad.validate(), Err(GpuError::InvalidLaunchConfig));
+    }
+
+    #[test]
+    fn enqueue_rejects_invalid_command() {
+        let mut q = GpuQueue::new(QueueId::new(0), test_partition());
+        let bad = QueueCommand {
+            cmd_type: CommandType::KernelLaunch,
+            kernel_id: None,
+            buffer_src: None,
+            buffer_dst: None,
+            size_bytes: 0,
+        };
+        assert_eq!(q.enqueue(&bad), Err(GpuError::InvalidLaunchConfig));
+        assert_eq!(q.depth, 0); // Nothing enqueued
     }
 }

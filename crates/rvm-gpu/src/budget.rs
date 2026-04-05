@@ -207,9 +207,33 @@ impl GpuBudget {
     }
 }
 
+impl GpuBudget {
+    /// A budget with all limits set to `u64::MAX` / `u32::MAX`.
+    ///
+    /// Useful for testing or contexts where budget enforcement is handled
+    /// elsewhere.
+    #[must_use]
+    pub const fn unlimited() -> Self {
+        Self::new(u64::MAX, u64::MAX, u64::MAX, u32::MAX)
+    }
+
+    /// A budget with all limits set to zero (immediately exhausted).
+    ///
+    /// This is the same as [`Default`]. No GPU operations are permitted.
+    #[must_use]
+    pub const fn disabled() -> Self {
+        Self::new(0, 0, 0, 0)
+    }
+}
+
+/// Default budget is **disabled** (zero limits).
+///
+/// All GPU operations will be rejected until explicit limits are set.
+/// Use [`GpuBudget::unlimited()`] for an unrestricted budget or
+/// [`GpuBudget::new()`] with explicit values.
 impl Default for GpuBudget {
     fn default() -> Self {
-        Self::new(0, 0, 0, 0)
+        Self::disabled()
     }
 }
 

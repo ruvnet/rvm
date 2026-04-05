@@ -10,7 +10,7 @@
 //! capability rights and budget availability before dispatching to the
 //! hardware abstraction layer.
 
-use rvm_types::{PartitionId, RvmResult};
+use rvm_types::{PartitionId, RvmError, RvmResult};
 
 use crate::budget::GpuBudget;
 use crate::GpuStatus;
@@ -69,15 +69,94 @@ impl GpuContext {
     /// This is a pre-check only — it does NOT record usage. Call the
     /// individual `record_*` methods on the budget after the operation
     /// completes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::InvalidPartitionState`] if the context is not ready.
+    /// Returns [`RvmError::ResourceLimitExceeded`] if any budget dimension would be exceeded.
     pub fn check_budget(&self, compute_ns: u64, transfer_bytes: u64) -> RvmResult<()> {
+        if !self.is_ready() {
+            return Err(RvmError::InvalidPartitionState);
+        }
         self.budget.check_compute(compute_ns)?;
         self.budget.check_transfer(transfer_bytes)?;
         self.budget.check_launch()?;
         Ok(())
     }
 
+    /// Atomically check AND record a kernel launch (compute + transfer + launch count).
+    ///
+    /// Eliminates the TOCTOU gap between `check_budget` and separate `record_*` calls.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::InvalidPartitionState`] if the context is not ready.
+    /// Returns [`RvmError::ResourceLimitExceeded`] if any budget dimension would be exceeded.
+    pub fn try_launch(&mut self, compute_ns: u64, transfer_bytes: u64) -> RvmResult<()> {
+        if !self.is_ready() {
+            return Err(RvmError::InvalidPartitionState);
+        }
+        // Snapshot current state for rollback on partial failure.
+        let snap_compute = self.budget.compute_ns_used;
+        let snap_transfer = self.budget.transfer_bytes_used;
+
+        // First step: no rollback needed on failure.
+        self.budget.record_compute(compute_ns)?;
+
+        // Second step: rollback compute on failure.
+        if let Err(e) = self.budget.record_transfer(transfer_bytes) {
+            self.budget.compute_ns_used = snap_compute;
+            return Err(e);
+        }
+
+        // Third step: rollback compute + transfer on failure.
+        if let Err(e) = self.budget.record_launch() {
+            self.budget.compute_ns_used = snap_compute;
+            self.budget.transfer_bytes_used = snap_transfer;
+            return Err(e);
+        }
+
+        self.active_kernels = self.active_kernels.saturating_add(1);
+        Ok(())
+    }
+
+    /// Atomically check AND record a transfer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::InvalidPartitionState`] if the context is not ready.
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the transfer budget would be exceeded.
+    pub fn try_transfer(&mut self, bytes: u64) -> RvmResult<()> {
+        if !self.is_ready() {
+            return Err(RvmError::InvalidPartitionState);
+        }
+        self.budget.record_transfer(bytes)
+    }
+
+    /// Atomically check AND record a memory allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::InvalidPartitionState`] if the context is not ready.
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the memory budget would be exceeded.
+    pub fn try_alloc(&mut self, bytes: u64) -> RvmResult<()> {
+        if !self.is_ready() {
+            return Err(RvmError::InvalidPartitionState);
+        }
+        self.budget.record_memory(bytes)?;
+        self.allocated_memory = self.allocated_memory.saturating_add(bytes);
+        Ok(())
+    }
+
     /// Record a successful kernel launch in the budget and active count.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::InvalidPartitionState`] if the context is not ready.
     pub fn record_kernel_launch(&mut self, compute_ns: u64) -> RvmResult<()> {
+        if !self.is_ready() {
+            return Err(RvmError::InvalidPartitionState);
+        }
         self.budget.record_compute(compute_ns)?;
         self.budget.record_launch()?;
         self.active_kernels = self.active_kernels.saturating_add(1);
@@ -85,7 +164,14 @@ impl GpuContext {
     }
 
     /// Record a completed transfer in the budget.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::InvalidPartitionState`] if the context is not ready.
     pub fn record_transfer(&mut self, transferred_bytes: u64) -> RvmResult<()> {
+        if !self.is_ready() {
+            return Err(RvmError::InvalidPartitionState);
+        }
         self.budget.record_transfer(transferred_bytes)
     }
 
@@ -95,19 +181,34 @@ impl GpuContext {
     }
 
     /// Record a GPU memory allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::InvalidPartitionState`] if the context is not ready.
     pub fn record_memory_alloc(&mut self, bytes: u64) -> RvmResult<()> {
+        if !self.is_ready() {
+            return Err(RvmError::InvalidPartitionState);
+        }
         self.budget.record_memory(bytes)?;
         self.allocated_memory = self.allocated_memory.saturating_add(bytes);
         Ok(())
     }
 
     /// Record a GPU memory deallocation.
-    pub fn record_memory_free(&mut self, bytes: u64) {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::InvalidPartitionState`] if the context is not ready.
+    pub fn record_memory_free(&mut self, bytes: u64) -> RvmResult<()> {
+        if !self.is_ready() {
+            return Err(RvmError::InvalidPartitionState);
+        }
         self.allocated_memory = self.allocated_memory.saturating_sub(bytes);
         self.budget.memory_bytes_used = self
             .budget
             .memory_bytes_used
             .saturating_sub(bytes);
+        Ok(())
     }
 
     /// Reset per-epoch budget counters (compute, transfer, launches).
@@ -122,6 +223,7 @@ impl GpuContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rvm_types::RvmError;
 
     fn test_partition() -> PartitionId {
         PartitionId::new(1)
@@ -134,6 +236,12 @@ mod tests {
             4_194_304,  // 4MB transfer
             100,        // 100 launches
         )
+    }
+
+    fn ready_ctx() -> GpuContext {
+        let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
+        ctx.status = GpuStatus::Ready;
+        ctx
     }
 
     #[test]
@@ -153,20 +261,26 @@ mod tests {
     }
 
     #[test]
-    fn check_budget_passes() {
-        let ctx = GpuContext::new(test_partition(), 0, test_budget());
+    fn check_budget_passes_when_ready() {
+        let ctx = ready_ctx();
         assert!(ctx.check_budget(1_000_000, 1024).is_ok());
     }
 
     #[test]
-    fn check_budget_fails_on_compute() {
+    fn check_budget_fails_when_not_ready() {
         let ctx = GpuContext::new(test_partition(), 0, test_budget());
+        assert_eq!(ctx.check_budget(1_000_000, 1024), Err(RvmError::InvalidPartitionState));
+    }
+
+    #[test]
+    fn check_budget_fails_on_compute() {
+        let ctx = ready_ctx();
         assert!(ctx.check_budget(20_000_000, 0).is_err());
     }
 
     #[test]
     fn record_kernel_launch_and_complete() {
-        let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
+        let mut ctx = ready_ctx();
         assert!(ctx.record_kernel_launch(1_000_000).is_ok());
         assert_eq!(ctx.active_kernels, 1);
         assert_eq!(ctx.budget.compute_ns_used, 1_000_000);
@@ -177,27 +291,51 @@ mod tests {
     }
 
     #[test]
-    fn record_transfer() {
+    fn record_kernel_launch_fails_when_not_ready() {
         let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
+        assert_eq!(ctx.record_kernel_launch(1_000_000), Err(RvmError::InvalidPartitionState));
+    }
+
+    #[test]
+    fn record_transfer() {
+        let mut ctx = ready_ctx();
         assert!(ctx.record_transfer(2048).is_ok());
         assert_eq!(ctx.budget.transfer_bytes_used, 2048);
     }
 
     #[test]
-    fn record_memory_alloc_and_free() {
+    fn record_transfer_fails_when_not_ready() {
         let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
+        assert_eq!(ctx.record_transfer(2048), Err(RvmError::InvalidPartitionState));
+    }
+
+    #[test]
+    fn record_memory_alloc_and_free() {
+        let mut ctx = ready_ctx();
         assert!(ctx.record_memory_alloc(4096).is_ok());
         assert_eq!(ctx.allocated_memory, 4096);
         assert_eq!(ctx.budget.memory_bytes_used, 4096);
 
-        ctx.record_memory_free(2048);
+        ctx.record_memory_free(2048).unwrap();
         assert_eq!(ctx.allocated_memory, 2048);
         assert_eq!(ctx.budget.memory_bytes_used, 2048);
     }
 
     #[test]
-    fn reset_epoch_preserves_memory() {
+    fn record_memory_alloc_fails_when_not_ready() {
         let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
+        assert_eq!(ctx.record_memory_alloc(4096), Err(RvmError::InvalidPartitionState));
+    }
+
+    #[test]
+    fn record_memory_free_fails_when_not_ready() {
+        let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
+        assert_eq!(ctx.record_memory_free(4096), Err(RvmError::InvalidPartitionState));
+    }
+
+    #[test]
+    fn reset_epoch_preserves_memory() {
+        let mut ctx = ready_ctx();
         ctx.record_kernel_launch(5_000_000).unwrap();
         ctx.record_transfer(1024).unwrap();
         ctx.record_memory_alloc(4096).unwrap();
@@ -210,5 +348,71 @@ mod tests {
         // Memory is preserved
         assert_eq!(ctx.budget.memory_bytes_used, 4096);
         assert_eq!(ctx.allocated_memory, 4096);
+    }
+
+    #[test]
+    fn try_launch_atomic_success() {
+        let mut ctx = ready_ctx();
+        assert!(ctx.try_launch(1_000_000, 2048).is_ok());
+        assert_eq!(ctx.budget.compute_ns_used, 1_000_000);
+        assert_eq!(ctx.budget.transfer_bytes_used, 2048);
+        assert_eq!(ctx.budget.kernel_launches_used, 1);
+        assert_eq!(ctx.active_kernels, 1);
+    }
+
+    #[test]
+    fn try_launch_fails_when_not_ready() {
+        let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
+        assert_eq!(ctx.try_launch(1_000_000, 2048), Err(RvmError::InvalidPartitionState));
+    }
+
+    #[test]
+    fn try_launch_rollback_on_transfer_failure() {
+        let mut ctx = ready_ctx();
+        // Exhaust transfer budget
+        ctx.budget.transfer_bytes_used = ctx.budget.transfer_bytes_max;
+        let result = ctx.try_launch(1_000_000, 1);
+        assert!(result.is_err());
+        // Compute should be rolled back
+        assert_eq!(ctx.budget.compute_ns_used, 0);
+    }
+
+    #[test]
+    fn try_launch_rollback_on_launch_failure() {
+        let mut ctx = ready_ctx();
+        // Exhaust launch budget
+        ctx.budget.kernel_launches_used = ctx.budget.kernel_launches_max;
+        let result = ctx.try_launch(1_000_000, 2048);
+        assert!(result.is_err());
+        // Compute and transfer should be rolled back
+        assert_eq!(ctx.budget.compute_ns_used, 0);
+        assert_eq!(ctx.budget.transfer_bytes_used, 0);
+    }
+
+    #[test]
+    fn try_transfer_success() {
+        let mut ctx = ready_ctx();
+        assert!(ctx.try_transfer(2048).is_ok());
+        assert_eq!(ctx.budget.transfer_bytes_used, 2048);
+    }
+
+    #[test]
+    fn try_transfer_fails_when_not_ready() {
+        let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
+        assert_eq!(ctx.try_transfer(2048), Err(RvmError::InvalidPartitionState));
+    }
+
+    #[test]
+    fn try_alloc_success() {
+        let mut ctx = ready_ctx();
+        assert!(ctx.try_alloc(4096).is_ok());
+        assert_eq!(ctx.allocated_memory, 4096);
+        assert_eq!(ctx.budget.memory_bytes_used, 4096);
+    }
+
+    #[test]
+    fn try_alloc_fails_when_not_ready() {
+        let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
+        assert_eq!(ctx.try_alloc(4096), Err(RvmError::InvalidPartitionState));
     }
 }

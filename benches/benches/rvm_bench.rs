@@ -20,6 +20,13 @@ use rvm_types::{
     PartitionId, PhysAddr, WitnessRecord,
 };
 
+use rvm_gpu::{
+    budget::GpuBudget,
+    context::GpuContext,
+    kernel::{KernelId, LaunchConfig},
+    queue::{GpuQueue, QueueId, QueueCommand},
+};
+
 // ---------------------------------------------------------------------------
 // Benchmark 1: Witness emission throughput
 // Target: < 500 ns per record
@@ -500,6 +507,109 @@ fn bench_cut_pressure(c: &mut Criterion) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Benchmark: GPU budget check + record throughput
+// Target: < 50 ns per check+record pair
+// ---------------------------------------------------------------------------
+fn bench_gpu_budget_check_record(c: &mut Criterion) {
+    c.bench_function("gpu_budget_check_record_1000", |b| {
+        b.iter(|| {
+            let mut budget = GpuBudget::new(
+                u64::MAX / 2,       // large compute budget
+                u64::MAX / 2,       // large memory budget
+                u64::MAX / 2,       // large transfer budget
+                u32::MAX / 2,       // large launch budget
+            );
+            for _ in 0..1000 {
+                budget.check_compute(100).unwrap();
+                budget.record_compute(100).unwrap();
+            }
+            black_box(&budget);
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark: GPU context creation
+// Target: < 20 ns
+// ---------------------------------------------------------------------------
+fn bench_gpu_context_create(c: &mut Criterion) {
+    c.bench_function("gpu_context_create", |b| {
+        let budget = GpuBudget::new(1_000_000_000, 512 * 1024 * 1024, 1_000_000_000, 1000);
+        b.iter(|| {
+            let ctx = GpuContext::new(
+                black_box(PartitionId::new(1)),
+                black_box(0),
+                black_box(budget),
+            );
+            black_box(ctx);
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark: GPU launch config validation
+// Target: < 10 ns per validation
+// ---------------------------------------------------------------------------
+fn bench_gpu_launch_config_validate(c: &mut Criterion) {
+    c.bench_function("gpu_launch_config_validate_1000", |b| {
+        b.iter(|| {
+            for _ in 0..1000 {
+                let config = LaunchConfig {
+                    workgroups: [64, 64, 1],
+                    workgroup_size: [256, 1, 1],
+                    shared_memory_bytes: 16384,
+                    timeout_ns: 100_000_000,
+                };
+                black_box(config.validate().unwrap());
+            }
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark: GPU queue enqueue throughput
+// Target: < 30 ns per enqueue
+// ---------------------------------------------------------------------------
+fn bench_gpu_queue_enqueue(c: &mut Criterion) {
+    c.bench_function("gpu_queue_enqueue_1000", |b| {
+        b.iter(|| {
+            let mut queue = GpuQueue::with_max_depth(
+                QueueId::new(0),
+                PartitionId::new(1),
+                1024,
+            );
+            let cmd = QueueCommand::kernel_launch(KernelId::new(0));
+            for _ in 0..1000 {
+                queue.enqueue(&cmd).unwrap();
+                let _ = queue.complete_one(); // drain to avoid filling
+            }
+            black_box(&queue);
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark: GPU budget reset_epoch
+// Target: < 10 ns
+// ---------------------------------------------------------------------------
+fn bench_gpu_budget_reset(c: &mut Criterion) {
+    c.bench_function("gpu_budget_reset_epoch", |b| {
+        let mut budget = GpuBudget::new(1_000_000_000, 512 * 1024 * 1024, 1_000_000_000, 1000);
+        budget.record_compute(500_000_000).unwrap();
+        budget.record_memory(256 * 1024 * 1024).unwrap();
+        budget.record_transfer(500_000_000).unwrap();
+        for _ in 0..500 {
+            budget.record_launch().unwrap();
+        }
+        b.iter(|| {
+            let mut b = budget;
+            b.reset_epoch();
+            black_box(b);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_witness_emit,
@@ -513,5 +623,10 @@ criterion_group!(
     bench_security_gate,
     bench_witness_verify_chain,
     bench_cut_pressure,
+    bench_gpu_budget_check_record,
+    bench_gpu_context_create,
+    bench_gpu_launch_config_validate,
+    bench_gpu_queue_enqueue,
+    bench_gpu_budget_reset,
 );
 criterion_main!(benches);

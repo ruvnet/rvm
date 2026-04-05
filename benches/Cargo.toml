@@ -16,6 +16,7 @@ rvm-coherence = { workspace = true }
 rvm-memory = { workspace = true }
 rvm-proof = { workspace = true }
 rvm-security = { workspace = true }
+rvm-gpu = { workspace = true }
 criterion = { workspace = true }
 
 [[bench]]
@@ -28,4 +29,8 @@ harness = false
 
 [[bench]]
 name = "rvm_bench"
+harness = false
+
+[[bench]]
+name = "gpu_bench"
 harness = false

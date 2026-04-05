@@ -84,11 +84,11 @@ pub struct GpuBuffer {
 ///
 /// # Errors
 ///
-/// Returns [`GpuError::InvalidLaunchConfig`] if `size_bytes` is zero.
+/// Returns [`GpuError::BufferTooLarge`] if `size_bytes` is zero (invalid size).
 /// Returns [`GpuError::BufferTooLarge`] if `size_bytes` exceeds `max_buffer_size`.
 pub const fn validate_buffer(size_bytes: u64, max_buffer_size: u64) -> Result<(), GpuError> {
     if size_bytes == 0 {
-        return Err(GpuError::InvalidLaunchConfig);
+        return Err(GpuError::BufferTooLarge);
     }
     if size_bytes > max_buffer_size {
         return Err(GpuError::BufferTooLarge);
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn validate_buffer_zero_size() {
-        assert_eq!(validate_buffer(0, 1024), Err(GpuError::InvalidLaunchConfig));
+        assert_eq!(validate_buffer(0, 1024), Err(GpuError::BufferTooLarge));
     }
 
     #[test]

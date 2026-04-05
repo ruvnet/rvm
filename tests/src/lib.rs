@@ -2086,3 +2086,6 @@ mod tests {
         assert_eq!(id, signer.signer_id());
     }
 }
+
+#[cfg(test)]
+mod gpu_tests;
