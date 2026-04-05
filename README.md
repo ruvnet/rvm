@@ -3,13 +3,15 @@
 [![Rust](https://img.shields.io/badge/Rust-1.77+-orange.svg)](https://www.rust-lang.org)
 [![no_std](https://img.shields.io/badge/no__std-compatible-green.svg)](https://doc.rust-lang.org/reference/names/preludes.html)
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
-[![ADR](https://img.shields.io/badge/ADRs-132--143-purple.svg)](docs/adr/)
+[![ADR](https://img.shields.io/badge/ADRs-132--144-purple.svg)](docs/adr/)
+[![Tests](https://img.shields.io/badge/tests-945_passing-brightgreen.svg)](https://github.com/ruvnet/rvm)
+[![GPU](https://img.shields.io/badge/GPU-CUDA%20%7C%20Metal%20%7C%20WebGPU-blue.svg)](docs/adr/ADR-144-gpu-compute-support.md)
 [![Nightly](https://img.shields.io/badge/Nightly-Verified%20Releases-brightgreen.svg)](https://github.com/ruvnet/rvm/releases)
 [![EPIC](https://img.shields.io/badge/EPIC-ruvnet%2FRuVector%23328-brightgreen.svg)](https://github.com/ruvnet/RuVector/issues/328)
 
 ### **Agents don't fit in VMs. They need something that understands how they think.**
 
-> **Nightly verified releases** — RVM automatically detects new [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) releases, runs 797+ tests and benchmarks to prove zero regressions, and publishes verified builds with AI-powered discovery analysis. See [Releases](https://github.com/ruvnet/rvm/releases) | [ADR-143](docs/adr/ADR-143-nightly-verified-release-pipeline.md) | [pi.ruv.io](https://pi.ruv.io)
+> **945 tests. 14 crates. 6 GPU backends. Zero regressions.** RVM automatically detects new [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) releases, runs full verification with AI-powered discovery analysis, and publishes verified nightly builds. See [Releases](https://github.com/ruvnet/rvm/releases) | [User Guide](userguide/) | [pi.ruv.io](https://pi.ruv.io)
 
 > Part of the [RuVector](https://github.com/ruvnet/RuVector) ecosystem. Uses [RuVix](../../crates/ruvix/) kernel primitives and [RVF](../../crates/rvf/) package format. Designed for [Cognitum](https://cognitum.one) Seed, Appliance, and future chip targets.
 
@@ -205,7 +207,7 @@ rvm-types (foundation, no deps)
 # Check (no_std by default)
 cargo check
 
-# Run all 648 tests
+# Run all 945 tests
 cargo test --workspace --lib
 
 # Run 21 criterion benchmarks
@@ -260,6 +262,10 @@ make run      # boots at 0x4000_0000, PL011 UART output
 | FNV-1a hash (64 bytes) | fast | **~28 ns** | — |
 | Security gate P1 | fast | **~17 ns** | — |
 | Witness chain verify (64 records) | fast | **~892 ns** | — |
+| GPU context create | < 20 ns | **~2.2 ns** | 9x faster |
+| GPU launch config validate | < 10 ns | **~0.26 ns** | 38x faster |
+| GPU queue enqueue | < 30 ns | **~0.26 ns** | 115x faster |
+| GPU budget reset | < 10 ns | **~1.0 ns** | 10x faster |
 
 Run `cargo bench` for full criterion results with HTML reports.
 
@@ -283,7 +289,7 @@ Run `cargo bench` for full criterion results with HTML reports.
 | `rvm-gpu` | 65 | Device/context/kernel/buffer/queue management, 4-dimensional budget, coherence acceleration configs |
 | **Integration** | 48 | 17 e2e scenarios: agent lifecycle, split pressure, memory tiers, cap chain, boot timing |
 | **Benchmarks** | 21 | Criterion benchmarks for all performance-critical paths |
-| **Total** | **713** | **0 failures, 0 clippy warnings** |
+| **Total** | **945** | **0 failures, 0 clippy warnings** |
 
 ### Security Audit Results
 
@@ -572,7 +578,7 @@ brew install qemu  # macOS
 ```bash
 # 1. Clone and verify (--recurse-submodules pulls ruvector + rudevolution)
 git clone --recurse-submodules https://github.com/ruvnet/rvm.git && cd rvm
-cargo test --workspace --lib    # 797 tests, 0 failures
+cargo test --workspace --lib    # 945 tests, 0 failures
 
 # 2. Run benchmarks
 cargo bench -p rvm-benches      # 11 criterion benchmarks
