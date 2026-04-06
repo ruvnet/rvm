@@ -374,7 +374,7 @@ RVM leverages existing RuVector crates rather than reimplementing graph primitiv
 ## Non-Goals (v1)
 
 - Full Linux ABI compatibility
-- Large device model surface (USB, GPU, network card diversity)
+- Large device model surface (USB, GPU, network card diversity). **Note:** GPU compute was added in ADR-144 as an optional, feature-gated subsystem.
 - Desktop or workstation use
 - Full formal verification (deferred to post-v1; seL4-style proofs are multi-year efforts)
 - Cloud VM replacement (strongest advantage is edge/appliance coherence)
