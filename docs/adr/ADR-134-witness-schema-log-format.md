@@ -1,6 +1,6 @@
 # ADR-134: Witness Schema and Log Format
 
-**Status**: Proposed
+**Status**: Accepted
 **Date**: 2026-04-04
 **Authors**: Claude Code (Opus 4.6)
 **Supersedes**: None

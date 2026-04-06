@@ -1,6 +1,6 @@
 # ADR-135: Proof Verifier Design — Three-Layer Verification for Capability-Gated Mutation
 
-**Status**: Proposed
+**Status**: Accepted
 **Date**: 2026-04-04
 **Authors**: Claude Code (Opus 4.6)
 **Supersedes**: None
