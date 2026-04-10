@@ -3,7 +3,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.77+-orange.svg)](https://www.rust-lang.org)
 [![no_std](https://img.shields.io/badge/no__std-compatible-green.svg)](https://doc.rust-lang.org/reference/names/preludes.html)
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
-[![ADR](https://img.shields.io/badge/ADRs-132--144-purple.svg)](docs/adr/)
+[![ADR](https://img.shields.io/badge/ADRs-132--154-purple.svg)](docs/adr/)
 [![Tests](https://img.shields.io/badge/tests-945_passing-brightgreen.svg)](https://github.com/ruvnet/rvm)
 [![GPU](https://img.shields.io/badge/GPU-CUDA%20%7C%20Metal%20%7C%20WebGPU-blue.svg)](docs/adr/ADR-144-gpu-compute-support.md)
 [![Nightly](https://img.shields.io/badge/Nightly-Verified%20Releases-brightgreen.svg)](https://github.com/ruvnet/rvm/releases)
@@ -541,6 +541,18 @@ See [ADR-144](docs/adr/ADR-144-gpu-compute-support.md) for the complete architec
 | ADR-140 | Agent runtime adapter |
 | ADR-141 | Coherence engine kernel integration and runtime pipeline |
 | ADR-142 | TEE-backed cryptographic verification (SHA-256, Ed25519, HMAC-SHA256, TEE pipeline) |
+| ADR-143 | Nightly verified release pipeline |
+| ADR-144 | GPU compute support (CUDA, Metal, WebGPU, Vulkan, OpenCL, WASM SIMD) |
+| ADR-145 | IPC protocol semantics |
+| ADR-146 | SMP scheduling model |
+| ADR-147 | Hardware abstraction layer contract |
+| ADR-148 | Error model and recovery state machine |
+| ADR-149 | RVF integration for RVM |
+| ADR-150 | Device lease lifecycle protocol |
+| ADR-151 | GPU witness event registry |
+| ADR-152 | GPU MinCut correctness model |
+| ADR-153 | Multi-node mesh protocol |
+| ADR-154 | Formal verification roadmap |
 
 </details>
 
