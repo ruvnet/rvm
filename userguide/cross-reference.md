@@ -150,7 +150,7 @@ defined and the chapter that explains their usage.
 |---|---|
 | Build and run RVM for the first time | [01-quickstart.md](01-quickstart.md) |
 | Understand RVM's key ideas before diving into code | [02-core-concepts.md](02-core-concepts.md) |
-| See how the 13 crates fit together | [03-architecture.md](03-architecture.md) |
+| See how the 14 crates fit together | [03-architecture.md](03-architecture.md) |
 | Find the API for a specific crate | [04-crate-reference.md](04-crate-reference.md) |
 | Add capability checks to an operation | [05-capabilities-proofs.md](05-capabilities-proofs.md) |
 | Submit and verify a proof | [05-capabilities-proofs.md](05-capabilities-proofs.md) |
