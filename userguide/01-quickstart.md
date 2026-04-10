@@ -45,7 +45,7 @@ qemu-system-aarch64 --version   # should print 8.0 or higher
 
 ## Step 1: Clone and Build
 
-Clone the repository and verify that all 648 tests pass on your host machine:
+Clone the repository and verify that all 945 tests pass on your host machine:
 
 ```bash
 git clone https://github.com/ruvnet/rvm.git
@@ -60,7 +60,7 @@ This command compiles every crate (`rvm-types`, `rvm-hal`, `rvm-cap`, `rvm-witne
 You should see output ending with:
 
 ```
-test result: ok. 648 passed; 0 failed; 0 ignored
+test result: ok. 945 passed; 0 failed; 0 ignored
 ```
 
 > **Tip:** If a test fails, check [Troubleshooting](14-troubleshooting.md) for common host-build issues.
