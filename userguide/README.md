@@ -99,5 +99,5 @@ All RVM crates are `#![no_std]` and `#![forbid(unsafe_code)]` by default. No C t
 
 - **Repository**: <https://github.com/ruvnet/rvm>
 - **License**: MIT OR Apache-2.0
-- **ADR References**: ADR-132 through ADR-142
+- **ADR References**: ADR-132 through ADR-154
 - **Start building**: [Quick Start](01-quickstart.md)
