@@ -33,4 +33,4 @@ cargo test -p rvm-tests
 
 ## Workspace Dependencies
 
-All 13 RVM crates (rvm-types through rvm-kernel).
+All 14 RVM crates (rvm-types through rvm-kernel).

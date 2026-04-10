@@ -359,7 +359,7 @@ Capability-based isolation, proof-gated execution, and witness attestation on mi
 
 | # | Criterion | Target |
 |---|-----------|--------|
-| 1 | All 13 crates compile with `#![no_std]` and `#![forbid(unsafe_code)]` | Enforced |
+| 1 | All 14 crates compile with `#![no_std]` and `#![forbid(unsafe_code)]` | Enforced |
 | 2 | Cold boot to first witness | < 250ms on Appliance hardware |
 | 3 | Hot partition switch | < 10 microseconds |
 | 4 | Witness record is exactly 64 bytes, cache-line aligned | Compile-time asserted |
@@ -612,7 +612,7 @@ The [`userguide/`](userguide/) directory contains 17 chapters covering every sub
 | [01 Quick Start](userguide/01-quickstart.md) | Build, test, and boot in 5 minutes |
 | [02 Core Concepts](userguide/02-core-concepts.md) | Partitions, capabilities, witnesses, proofs, coherence |
 | [03 Architecture](userguide/03-architecture.md) | Layer diagram, data flow, boot sequence, feature flags |
-| [04 Crate Reference](userguide/04-crate-reference.md) | All 13 crates with types, APIs, and dependencies |
+| [04 Crate Reference](userguide/04-crate-reference.md) | All 14 crates with types, APIs, and dependencies |
 | [05 Capabilities & Proofs](userguide/05-capabilities-proofs.md) | 7 rights, delegation trees, 3 proof tiers, TEE |
 | [06 Witness & Audit](userguide/06-witness-audit.md) | 64-byte records, hash chains, signing, querying |
 | [07 Partitions & Scheduling](userguide/07-partitions-scheduling.md) | Lifecycle, IPC, split/merge, 2-signal scheduler |
