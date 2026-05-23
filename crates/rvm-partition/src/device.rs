@@ -280,8 +280,7 @@ impl<const MAX_DEVICES: usize, const MAX_LEASES: usize>
     /// Returns `false` if the device id is invalid.
     #[must_use]
     pub fn is_device_available(&self, device_id: u32) -> bool {
-        self.find_device(device_id)
-            .is_some_and(|d| d.available)
+        self.find_device(device_id).is_some_and(|d| d.available)
     }
 
     /// Return the number of registered devices.
@@ -351,8 +350,7 @@ mod tests {
             .unwrap();
         mgr.register_device(make_info(DeviceClass::Storage, 0x5000_0000, 0x2000))
             .unwrap();
-        let result =
-            mgr.register_device(make_info(DeviceClass::Serial, 0x6000_0000, 0x100));
+        let result = mgr.register_device(make_info(DeviceClass::Serial, 0x6000_0000, 0x100));
         assert_eq!(result, Err(RvmError::ResourceLimitExceeded));
     }
 
@@ -453,10 +451,7 @@ mod tests {
         assert_eq!(mgr.get_lease_holder(dev_b), Some(pid(2)));
 
         // Each partition only sees its own device.
-        assert_ne!(
-            mgr.get_lease_holder(dev_a),
-            mgr.get_lease_holder(dev_b)
-        );
+        assert_ne!(mgr.get_lease_holder(dev_a), mgr.get_lease_holder(dev_b));
     }
 
     // --- Error paths ---

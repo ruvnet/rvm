@@ -326,7 +326,10 @@ mod tests {
         let mut mgr = AgentManager::<2>::new();
         mgr.spawn(&make_config(1), &log).unwrap();
         mgr.spawn(&make_config(2), &log).unwrap();
-        assert_eq!(mgr.spawn(&make_config(3), &log), Err(RvmError::ResourceLimitExceeded));
+        assert_eq!(
+            mgr.spawn(&make_config(3), &log),
+            Err(RvmError::ResourceLimitExceeded)
+        );
     }
 
     #[test]

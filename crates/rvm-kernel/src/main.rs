@@ -162,11 +162,11 @@ pub extern "C" fn rvm_main(_dtb_ptr: u64) -> ! {
 /// Only compiled when not under the test harness (which provides its own).
 #[cfg(not(test))]
 #[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
+fn panic(_info: &core::panic::PanicInfo) -> ! {
     #[cfg(target_arch = "aarch64")]
     unsafe {
         rvm_hal::aarch64::uart::uart_puts("\n[RVM] !!! PANIC !!!\n");
-        if let Some(loc) = info.location() {
+        if let Some(loc) = _info.location() {
             rvm_hal::aarch64::uart::uart_puts("[RVM]   at ");
             rvm_hal::aarch64::uart::uart_puts(loc.file());
             rvm_hal::aarch64::uart::uart_puts(":");

@@ -61,6 +61,9 @@ pub use rvm_boot as boot;
 pub use rvm_cap as cap;
 /// Coherence monitoring and Phi computation.
 pub use rvm_coherence as coherence;
+/// GPU compute subsystem.
+#[cfg(feature = "gpu")]
+pub use rvm_gpu as gpu;
 /// Hardware abstraction layer traits.
 pub use rvm_hal as hal;
 /// Guest memory management.
@@ -79,9 +82,6 @@ pub use rvm_types as types;
 pub use rvm_wasm as wasm;
 /// Witness trail management.
 pub use rvm_witness as witness;
-/// GPU compute subsystem.
-#[cfg(feature = "gpu")]
-pub use rvm_gpu as gpu;
 
 /// RVM version string.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -571,16 +571,17 @@ impl Kernel {
         if !self.booted {
             return Err(RvmError::InvalidPartitionState);
         }
-        let src = self.partitions.get(source).ok_or(RvmError::PartitionNotFound)?;
+        let src = self
+            .partitions
+            .get(source)
+            .ok_or(RvmError::PartitionNotFound)?;
         let vcpu_count = src.vcpu_count;
 
         // Create the new partition (inherits source's vCPU count).
         let epoch = self.scheduler.current_epoch();
-        let child = self.partitions.create(
-            rvm_partition::PartitionType::Agent,
-            vcpu_count,
-            epoch,
-        )?;
+        let child =
+            self.partitions
+                .create(rvm_partition::PartitionType::Agent, vcpu_count, epoch)?;
 
         // Register child in coherence graph.
         let _ = self.coherence.add_partition(child);
@@ -603,6 +604,7 @@ impl Kernel {
     /// target partition absorbs the source; the source is destroyed.
     ///
     /// Returns the surviving partition ID on success.
+    #[allow(clippy::similar_names)]
     pub fn execute_merge(
         &mut self,
         absorber: PartitionId,
@@ -612,8 +614,14 @@ impl Kernel {
             return Err(RvmError::InvalidPartitionState);
         }
         // Verify both partitions exist.
-        let _a = self.partitions.get(absorber).ok_or(RvmError::PartitionNotFound)?;
-        let _b = self.partitions.get(absorbed).ok_or(RvmError::PartitionNotFound)?;
+        let _a = self
+            .partitions
+            .get(absorber)
+            .ok_or(RvmError::PartitionNotFound)?;
+        let _b = self
+            .partitions
+            .get(absorbed)
+            .ok_or(RvmError::PartitionNotFound)?;
 
         // Check coherence-based merge preconditions.
         let score_a = self.coherence.score(absorber);
@@ -643,19 +651,22 @@ impl Kernel {
     ///
     /// Returns the decision that was applied, along with any new partition
     /// ID created by a split.
-    pub fn apply_decision(
-        &mut self,
-        decision: CoherenceDecision,
-    ) -> RvmResult<ApplyResult> {
+    pub fn apply_decision(&mut self, decision: CoherenceDecision) -> RvmResult<ApplyResult> {
         match decision {
             CoherenceDecision::NoAction => Ok(ApplyResult::NoAction),
             CoherenceDecision::SplitRecommended { partition, .. } => {
                 let child = self.execute_split(partition)?;
-                Ok(ApplyResult::Split { source: partition, child })
+                Ok(ApplyResult::Split {
+                    source: partition,
+                    child,
+                })
             }
             CoherenceDecision::MergeRecommended { a, b, .. } => {
                 let survivor = self.execute_merge(a, b)?;
-                Ok(ApplyResult::Merged { survivor, absorbed: b })
+                Ok(ApplyResult::Merged {
+                    survivor,
+                    absorbed: b,
+                })
             }
         }
     }
@@ -666,11 +677,7 @@ impl Kernel {
     ///
     /// Also registers the communication edge in the coherence graph.
     /// Emits a `CommEdgeCreate` witness record.
-    pub fn create_channel(
-        &mut self,
-        from: PartitionId,
-        to: PartitionId,
-    ) -> RvmResult<CommEdgeId> {
+    pub fn create_channel(&mut self, from: PartitionId, to: PartitionId) -> RvmResult<CommEdgeId> {
         if !self.booted {
             return Err(RvmError::InvalidPartitionState);
         }
@@ -797,11 +804,7 @@ impl Kernel {
     ///
     /// Validates residency score against promotion thresholds.
     /// Emits a `RegionPromote` witness record on success.
-    pub fn promote_region(
-        &mut self,
-        region_id: OwnedRegionId,
-        target: Tier,
-    ) -> RvmResult<Tier> {
+    pub fn promote_region(&mut self, region_id: OwnedRegionId, target: Tier) -> RvmResult<Tier> {
         let old_tier = self.tier_manager.promote(region_id, target)?;
 
         let mut record = WitnessRecord::zeroed();
@@ -818,11 +821,7 @@ impl Kernel {
     /// Demote a region to a colder tier.
     ///
     /// Emits a `RegionDemote` witness record on success.
-    pub fn demote_region(
-        &mut self,
-        region_id: OwnedRegionId,
-        target: Tier,
-    ) -> RvmResult<Tier> {
+    pub fn demote_region(&mut self, region_id: OwnedRegionId, target: Tier) -> RvmResult<Tier> {
         let old_tier = self.tier_manager.demote(region_id, target)?;
 
         let mut record = WitnessRecord::zeroed();
@@ -845,10 +844,7 @@ impl Kernel {
     // -- Device lease management --
 
     /// Register a hardware device.
-    pub fn register_device(
-        &mut self,
-        info: rvm_partition::DeviceInfo,
-    ) -> RvmResult<u32> {
+    pub fn register_device(&mut self, info: rvm_partition::DeviceInfo) -> RvmResult<u32> {
         self.devices.register_device(info)
     }
 
@@ -866,9 +862,9 @@ impl Kernel {
             return Err(RvmError::InvalidPartitionState);
         }
         let epoch = self.scheduler.current_epoch() as u64;
-        let lease_id = self.devices.grant_lease(
-            device_id, partition, duration_epochs, epoch, cap_hash,
-        )?;
+        let lease_id =
+            self.devices
+                .grant_lease(device_id, partition, duration_epochs, epoch, cap_hash)?;
 
         let mut record = WitnessRecord::zeroed();
         record.action_kind = ActionKind::DeviceLeaseGrant as u8;
@@ -883,10 +879,7 @@ impl Kernel {
     /// Revoke a device lease.
     ///
     /// Emits a `DeviceLeaseRevoke` witness record.
-    pub fn revoke_device_lease(
-        &mut self,
-        lease_id: rvm_types::DeviceLeaseId,
-    ) -> RvmResult<()> {
+    pub fn revoke_device_lease(&mut self, lease_id: rvm_types::DeviceLeaseId) -> RvmResult<()> {
         self.devices.revoke_lease(lease_id)?;
 
         let mut record = WitnessRecord::zeroed();
@@ -1087,8 +1080,13 @@ pub struct KernelHostContext<'a> {
     pub next_sequence: u64,
 }
 
-impl<'a> rvm_wasm::host_functions::HostContext for KernelHostContext<'a> {
-    fn send(&mut self, _sender: rvm_wasm::agent::AgentId, target: u64, length: u64) -> RvmResult<u64> {
+impl rvm_wasm::host_functions::HostContext for KernelHostContext<'_> {
+    fn send(
+        &mut self,
+        _sender: rvm_wasm::agent::AgentId,
+        target: u64,
+        length: u64,
+    ) -> RvmResult<u64> {
         let edge = self.active_channel.ok_or(RvmError::PartitionNotFound)?;
 
         // Checked truncation: reject if target overflows u32.
@@ -1198,7 +1196,10 @@ mod tests {
     fn test_create_partition_before_boot() {
         let mut kernel = Kernel::with_defaults();
         let config = PartitionConfig::default();
-        assert_eq!(kernel.create_partition(&config), Err(RvmError::InvalidPartitionState));
+        assert_eq!(
+            kernel.create_partition(&config),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
@@ -1217,7 +1218,10 @@ mod tests {
         kernel.boot().unwrap();
 
         let bad_id = PartitionId::new(999);
-        assert_eq!(kernel.destroy_partition(bad_id), Err(RvmError::PartitionNotFound));
+        assert_eq!(
+            kernel.destroy_partition(bad_id),
+            Err(RvmError::PartitionNotFound)
+        );
     }
 
     #[test]
@@ -1334,7 +1338,10 @@ mod tests {
     fn test_destroy_before_boot_fails() {
         let mut kernel = Kernel::with_defaults();
         let id = PartitionId::new(1);
-        assert_eq!(kernel.destroy_partition(id), Err(RvmError::InvalidPartitionState));
+        assert_eq!(
+            kernel.destroy_partition(id),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
@@ -1346,7 +1353,10 @@ mod tests {
         let id = kernel.create_partition(&config).unwrap();
         assert!(kernel.destroy_partition(id).is_ok());
         // Second destroy should fail — partition was removed.
-        assert_eq!(kernel.destroy_partition(id), Err(RvmError::PartitionNotFound));
+        assert_eq!(
+            kernel.destroy_partition(id),
+            Err(RvmError::PartitionNotFound)
+        );
     }
 
     #[test]
@@ -1452,14 +1462,8 @@ mod tests {
         assert_eq!(kernel.coherence_engine().partition_count(), 2);
 
         // Isolated partitions have max coherence score.
-        assert_eq!(
-            kernel.coherence_score(id1),
-            rvm_types::CoherenceScore::MAX,
-        );
-        assert_eq!(
-            kernel.coherence_score(id2),
-            rvm_types::CoherenceScore::MAX,
-        );
+        assert_eq!(kernel.coherence_score(id1), rvm_types::CoherenceScore::MAX,);
+        assert_eq!(kernel.coherence_score(id2), rvm_types::CoherenceScore::MAX,);
     }
 
     #[test]
@@ -1534,7 +1538,10 @@ mod tests {
         kernel.create_partition(&config).unwrap();
 
         // Before any tick, recommendation is NoAction.
-        assert_eq!(kernel.coherence_recommendation(), CoherenceDecision::NoAction);
+        assert_eq!(
+            kernel.coherence_recommendation(),
+            CoherenceDecision::NoAction
+        );
     }
 
     #[test]
@@ -1551,10 +1558,7 @@ mod tests {
         assert_eq!(kernel.coherence_engine().partition_count(), 1);
 
         // id2 is still tracked.
-        assert_eq!(
-            kernel.coherence_score(id2),
-            rvm_types::CoherenceScore::MAX,
-        );
+        assert_eq!(kernel.coherence_score(id2), rvm_types::CoherenceScore::MAX,);
     }
 
     #[test]
@@ -2144,7 +2148,15 @@ mod tests {
         let b = kernel.create_partition(&config).unwrap();
 
         // Initial coherence on the partition object should be 5000 (default).
-        assert_eq!(kernel.partitions().get(a).unwrap().coherence.as_basis_points(), 5000);
+        assert_eq!(
+            kernel
+                .partitions()
+                .get(a)
+                .unwrap()
+                .coherence
+                .as_basis_points(),
+            5000
+        );
 
         // Drive coherence to 0 via external traffic.
         kernel.record_communication(a, b, 5000).unwrap();

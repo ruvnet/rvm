@@ -162,7 +162,8 @@ mod tests {
             page_size: 4096,
         })
         .unwrap();
-        hal.init_interrupts(&InterruptConfig { irq_count: 256 }).unwrap();
+        hal.init_interrupts(&InterruptConfig { irq_count: 256 })
+            .unwrap();
 
         assert!(hal.uart_initialized);
         assert!(hal.mmu_initialized);

@@ -104,7 +104,11 @@ pub fn evaluate_merge<const N: usize, const E: usize>(
         0u16
     } else {
         let bp = ((mutual_weight as u128) * 10_000 / (combined as u128)) as u16;
-        if bp > 10_000 { 10_000 } else { bp }
+        if bp > 10_000 {
+            10_000
+        } else {
+            bp
+        }
     };
 
     let mutual_coherence = CoherenceScore::from_basis_points(mutual_bp);
@@ -287,8 +291,10 @@ mod tests {
         let mut g = CoherenceGraph::<4, 8>::new();
         g.add_node(PartitionId::new(1)).unwrap();
         g.add_node(PartitionId::new(2)).unwrap();
-        g.add_edge(PartitionId::new(1), PartitionId::new(2), 500).unwrap();
-        g.add_edge(PartitionId::new(2), PartitionId::new(1), 500).unwrap();
+        g.add_edge(PartitionId::new(1), PartitionId::new(2), 500)
+            .unwrap();
+        g.add_edge(PartitionId::new(2), PartitionId::new(1), 500)
+            .unwrap();
 
         let signal = evaluate_merge(PartitionId::new(1), PartitionId::new(2), &g);
         // total_1 = 500 (out) + 500 (in) = 1000

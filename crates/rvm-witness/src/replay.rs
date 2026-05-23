@@ -72,32 +72,40 @@ pub fn verify_chain(records: &[WitnessRecord]) -> Result<usize, ChainIntegrityEr
 
 /// Returns an iterator over records matching the given partition ID.
 pub fn query_by_partition(
-    records: &[WitnessRecord], partition_id: u32,
+    records: &[WitnessRecord],
+    partition_id: u32,
 ) -> impl Iterator<Item = &WitnessRecord> {
-    records.iter().filter(move |r| r.actor_partition_id == partition_id)
+    records
+        .iter()
+        .filter(move |r| r.actor_partition_id == partition_id)
 }
 
 /// Returns an iterator over records matching the given action kind.
 pub fn query_by_action_kind(
-    records: &[WitnessRecord], kind: u8,
+    records: &[WitnessRecord],
+    kind: u8,
 ) -> impl Iterator<Item = &WitnessRecord> {
     records.iter().filter(move |r| r.action_kind == kind)
 }
 
 /// Returns an iterator over records within the given time range.
 pub fn query_by_time_range(
-    records: &[WitnessRecord], start_ns: u64, end_ns: u64,
+    records: &[WitnessRecord],
+    start_ns: u64,
+    end_ns: u64,
 ) -> impl Iterator<Item = &WitnessRecord> {
-    records.iter().filter(move |r| r.timestamp_ns >= start_ns && r.timestamp_ns <= end_ns)
+    records
+        .iter()
+        .filter(move |r| r.timestamp_ns >= start_ns && r.timestamp_ns <= end_ns)
 }
 
 #[cfg(test)]
 mod tests {
     extern crate alloc;
-    use alloc::vec;
-    use alloc::vec::Vec;
     use super::*;
     use crate::log::WitnessLog;
+    use alloc::vec;
+    use alloc::vec::Vec;
     use rvm_types::ActionKind;
 
     fn build_chain(count: usize) -> Vec<WitnessRecord> {
@@ -105,9 +113,9 @@ mod tests {
         for i in 0..count {
             let mut r = WitnessRecord::zeroed();
             r.action_kind = ActionKind::SchedulerEpoch as u8;
-            r.actor_partition_id = (i as u32) % 3 + 1;
-            r.target_object_id = (i as u64) * 10;
-            r.timestamp_ns = (i as u64) * 1000 + 100;
+            r.actor_partition_id = u32::try_from(i).unwrap() % 3 + 1;
+            r.target_object_id = i as u64 * 10;
+            r.timestamp_ns = i as u64 * 1000 + 100;
             log.append(r);
         }
         let mut records = vec![WitnessRecord::zeroed(); count];
@@ -126,14 +134,20 @@ mod tests {
     fn test_verify_corrupted_record() {
         let mut records = build_chain(5);
         records[2].record_hash ^= 0xFFFF;
-        assert!(matches!(verify_chain(&records), Err(ChainIntegrityError::RecordCorrupted { .. })));
+        assert!(matches!(
+            verify_chain(&records),
+            Err(ChainIntegrityError::RecordCorrupted { .. })
+        ));
     }
 
     #[test]
     fn test_verify_broken_chain() {
         let mut records = build_chain(5);
         records[3].prev_hash ^= 0xDEAD;
-        assert!(matches!(verify_chain(&records), Err(ChainIntegrityError::ChainBreak { .. })));
+        assert!(matches!(
+            verify_chain(&records),
+            Err(ChainIntegrityError::ChainBreak { .. })
+        ));
     }
 
     #[test]
@@ -151,7 +165,8 @@ mod tests {
     #[test]
     fn test_query_by_action_kind() {
         let records = build_chain(5);
-        let matches: Vec<_> = query_by_action_kind(&records, ActionKind::SchedulerEpoch as u8).collect();
+        let matches: Vec<_> =
+            query_by_action_kind(&records, ActionKind::SchedulerEpoch as u8).collect();
         assert_eq!(matches.len(), 5);
     }
 

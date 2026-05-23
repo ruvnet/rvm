@@ -48,19 +48,19 @@ mod replay;
 mod signer;
 
 pub use emit::WitnessEmitter;
-pub use hash::{fnv1a_64, compute_chain_hash, compute_record_hash};
+pub use hash::{compute_chain_hash, compute_record_hash, fnv1a_64};
 pub use log::WitnessLog;
 pub use record::{ActionKind, WitnessRecord};
 pub use replay::{
-    ChainIntegrityError, verify_chain, query_by_partition, query_by_action_kind,
-    query_by_time_range,
+    query_by_action_kind, query_by_partition, query_by_time_range, verify_chain,
+    ChainIntegrityError,
 };
 #[cfg(any(test, feature = "null-signer"))]
 #[allow(deprecated)]
 pub use signer::NullSigner;
-pub use signer::{DefaultSigner, StrictSigner, WitnessSigner, default_signer};
+pub use signer::{default_signer, DefaultSigner, StrictSigner, WitnessSigner};
 #[cfg(feature = "crypto-sha256")]
-pub use signer::{HmacWitnessSigner, record_to_digest};
+pub use signer::{record_to_digest, HmacWitnessSigner};
 
 /// Default ring buffer capacity: 262,144 records (16 MB / 64 bytes).
 pub const DEFAULT_RING_CAPACITY: usize = 262_144;

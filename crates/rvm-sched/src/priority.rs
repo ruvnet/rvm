@@ -44,9 +44,11 @@ mod tests {
 
     #[test]
     fn test_no_overflow() {
-        // Maximum deadline + maximum pressure should not overflow.
+        // Maximum deadline + maximum pressure should not overflow u32.
         let pressure = CutPressure::from_fixed(u32::MAX);
         let result = compute_priority(u16::MAX, pressure);
-        assert!(result <= u32::MAX);
+        // Verify computation completed without panic (overflow would panic in
+        // debug builds). Result is always a valid u32.
+        let _ = result;
     }
 }

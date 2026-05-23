@@ -166,145 +166,145 @@ impl core::fmt::Display for WitnessHash {
 pub enum ActionKind {
     // --- Partition lifecycle (0x01-0x0F) ---
     /// A new partition was created.
-    PartitionCreate      = 0x01,
+    PartitionCreate = 0x01,
     /// A partition was destroyed and its resources freed.
-    PartitionDestroy     = 0x02,
+    PartitionDestroy = 0x02,
     /// A partition was suspended (tasks paused).
-    PartitionSuspend     = 0x03,
+    PartitionSuspend = 0x03,
     /// A suspended partition was resumed.
-    PartitionResume      = 0x04,
+    PartitionResume = 0x04,
     /// A partition was split along a mincut boundary.
-    PartitionSplit       = 0x05,
+    PartitionSplit = 0x05,
     /// Two partitions were merged into one.
-    PartitionMerge       = 0x06,
+    PartitionMerge = 0x06,
     /// A partition was hibernated to dormant/cold storage.
-    PartitionHibernate   = 0x07,
+    PartitionHibernate = 0x07,
     /// A hibernated partition was reconstructed from its receipt.
     PartitionReconstruct = 0x08,
     /// A partition was migrated to another node.
-    PartitionMigrate     = 0x09,
+    PartitionMigrate = 0x09,
 
     // --- Capability operations (0x10-0x1F) ---
     /// A capability was granted (copied) to another partition.
-    CapabilityGrant      = 0x10,
+    CapabilityGrant = 0x10,
     /// A capability was revoked.
-    CapabilityRevoke     = 0x11,
+    CapabilityRevoke = 0x11,
     /// A capability was delegated (with depth decrement).
-    CapabilityDelegate   = 0x12,
+    CapabilityDelegate = 0x12,
     /// Delegation depth was increased (escalation).
-    CapabilityEscalate   = 0x13,
+    CapabilityEscalate = 0x13,
     /// Capability was attenuated during a partition split (DC-8).
     CapabilityAttenuated = 0x14,
 
     // --- Memory operations (0x20-0x2F) ---
     /// A memory region was created.
-    RegionCreate         = 0x20,
+    RegionCreate = 0x20,
     /// A memory region was destroyed.
-    RegionDestroy        = 0x21,
+    RegionDestroy = 0x21,
     /// A memory region was transferred to another partition.
-    RegionTransfer       = 0x22,
+    RegionTransfer = 0x22,
     /// A memory region was shared (read-only) with another partition.
-    RegionShare          = 0x23,
+    RegionShare = 0x23,
     /// A shared memory region was unshared.
-    RegionUnshare        = 0x24,
+    RegionUnshare = 0x24,
     /// A memory region was promoted to a warmer tier.
-    RegionPromote        = 0x25,
+    RegionPromote = 0x25,
     /// A memory region was demoted to a colder tier.
-    RegionDemote         = 0x26,
+    RegionDemote = 0x26,
     /// A stage-2 mapping was added for a memory region.
-    RegionMap            = 0x27,
+    RegionMap = 0x27,
     /// A stage-2 mapping was removed for a memory region.
-    RegionUnmap          = 0x28,
+    RegionUnmap = 0x28,
 
     // --- Communication (0x30-0x3F) ---
     /// A communication edge was created between two partitions.
-    CommEdgeCreate       = 0x30,
+    CommEdgeCreate = 0x30,
     /// A communication edge was destroyed.
-    CommEdgeDestroy      = 0x31,
+    CommEdgeDestroy = 0x31,
     /// An IPC message was sent.
-    IpcSend              = 0x32,
+    IpcSend = 0x32,
     /// An IPC message was received.
-    IpcReceive           = 0x33,
+    IpcReceive = 0x33,
     /// A zero-copy memory share was established.
-    ZeroCopyShare        = 0x34,
+    ZeroCopyShare = 0x34,
     /// A notification signal was sent.
-    NotificationSignal   = 0x35,
+    NotificationSignal = 0x35,
 
     // --- Device operations (0x40-0x4F) ---
     /// A device lease was granted.
-    DeviceLeaseGrant     = 0x40,
+    DeviceLeaseGrant = 0x40,
     /// A device lease was revoked.
-    DeviceLeaseRevoke    = 0x41,
+    DeviceLeaseRevoke = 0x41,
     /// A device lease expired (time-bounded).
-    DeviceLeaseExpire    = 0x42,
+    DeviceLeaseExpire = 0x42,
     /// A device lease was renewed.
-    DeviceLeaseRenew     = 0x43,
+    DeviceLeaseRenew = 0x43,
 
     // --- Proof verification (0x50-0x5F) ---
     /// A P1 capability check passed.
-    ProofVerifiedP1      = 0x50,
+    ProofVerifiedP1 = 0x50,
     /// A P2 policy validation passed.
-    ProofVerifiedP2      = 0x51,
+    ProofVerifiedP2 = 0x51,
     /// A P3 deep proof passed.
-    ProofVerifiedP3      = 0x52,
+    ProofVerifiedP3 = 0x52,
     /// A proof was rejected.
-    ProofRejected        = 0x53,
+    ProofRejected = 0x53,
     /// A proof was escalated to a higher tier.
-    ProofEscalated       = 0x54,
+    ProofEscalated = 0x54,
 
     // --- Scheduler decisions (0x60-0x6F) ---
     /// Scheduler epoch boundary (bulk switch summary per DC-10).
-    SchedulerEpoch       = 0x60,
+    SchedulerEpoch = 0x60,
     /// Scheduler mode switched (Reflex / Flow / Recovery).
-    SchedulerModeSwitch  = 0x61,
+    SchedulerModeSwitch = 0x61,
     /// A task was spawned within a partition.
-    TaskSpawn            = 0x62,
+    TaskSpawn = 0x62,
     /// A task was terminated.
-    TaskTerminate        = 0x63,
+    TaskTerminate = 0x63,
     /// Scheduler triggered a structural split.
-    StructuralSplit      = 0x64,
+    StructuralSplit = 0x64,
     /// Scheduler triggered a structural merge.
-    StructuralMerge      = 0x65,
+    StructuralMerge = 0x65,
 
     // --- Recovery actions (0x70-0x7F) ---
     /// System entered recovery mode.
-    RecoveryEnter        = 0x70,
+    RecoveryEnter = 0x70,
     /// System exited recovery mode.
-    RecoveryExit         = 0x71,
+    RecoveryExit = 0x71,
     /// A recovery checkpoint was created.
-    CheckpointCreated    = 0x72,
+    CheckpointCreated = 0x72,
     /// A recovery checkpoint was restored.
-    CheckpointRestored   = 0x73,
+    CheckpointRestored = 0x73,
     /// Mincut budget was exceeded, stale cut used (DC-2 fallback).
     MinCutBudgetExceeded = 0x74,
     /// System entered degraded mode (DC-6).
-    DegradedModeEntered  = 0x75,
+    DegradedModeEntered = 0x75,
     /// System exited degraded mode.
-    DegradedModeExited   = 0x76,
+    DegradedModeExited = 0x76,
 
     // --- Boot and attestation (0x80-0x8F) ---
     /// Boot attestation record (genesis witness).
-    BootAttestation      = 0x80,
+    BootAttestation = 0x80,
     /// Boot sequence completed successfully.
-    BootComplete         = 0x81,
+    BootComplete = 0x81,
     /// TEE-backed attestation record.
-    TeeAttestation       = 0x82,
+    TeeAttestation = 0x82,
 
     // --- Vector/Graph mutations (0x90-0x9F) ---
     /// A vector was inserted into the coherence graph.
-    VectorPut            = 0x90,
+    VectorPut = 0x90,
     /// A vector was deleted from the coherence graph.
-    VectorDelete         = 0x91,
+    VectorDelete = 0x91,
     /// A graph mutation occurred.
-    GraphMutation        = 0x92,
+    GraphMutation = 0x92,
     /// Coherence scores were recomputed.
-    CoherenceRecomputed  = 0x93,
+    CoherenceRecomputed = 0x93,
 
     // --- VMID management (0xA0-0xAF) ---
     /// A physical VMID was reclaimed from a hibernated partition (DC-12).
-    VmidReclaim          = 0xA0,
+    VmidReclaim = 0xA0,
     /// Migration timed out and was aborted (DC-7).
-    MigrationTimeout     = 0xA1,
+    MigrationTimeout = 0xA1,
 }
 
 impl ActionKind {
@@ -342,28 +342,28 @@ pub fn fnv1a_64(data: &[u8]) -> u64 {
     // Process 8 bytes at a time (unrolled), preserving standard FNV-1a
     // per-byte XOR-then-multiply semantics for hash compatibility.
     while i + 8 <= len {
-        hash ^= data[i] as u64;
+        hash ^= u64::from(data[i]);
         hash = hash.wrapping_mul(FNV_PRIME);
-        hash ^= data[i + 1] as u64;
+        hash ^= u64::from(data[i + 1]);
         hash = hash.wrapping_mul(FNV_PRIME);
-        hash ^= data[i + 2] as u64;
+        hash ^= u64::from(data[i + 2]);
         hash = hash.wrapping_mul(FNV_PRIME);
-        hash ^= data[i + 3] as u64;
+        hash ^= u64::from(data[i + 3]);
         hash = hash.wrapping_mul(FNV_PRIME);
-        hash ^= data[i + 4] as u64;
+        hash ^= u64::from(data[i + 4]);
         hash = hash.wrapping_mul(FNV_PRIME);
-        hash ^= data[i + 5] as u64;
+        hash ^= u64::from(data[i + 5]);
         hash = hash.wrapping_mul(FNV_PRIME);
-        hash ^= data[i + 6] as u64;
+        hash ^= u64::from(data[i + 6]);
         hash = hash.wrapping_mul(FNV_PRIME);
-        hash ^= data[i + 7] as u64;
+        hash ^= u64::from(data[i + 7]);
         hash = hash.wrapping_mul(FNV_PRIME);
         i += 8;
     }
 
     // Handle remaining bytes one at a time.
     while i < len {
-        hash ^= data[i] as u64;
+        hash ^= u64::from(data[i]);
         hash = hash.wrapping_mul(FNV_PRIME);
         i += 1;
     }

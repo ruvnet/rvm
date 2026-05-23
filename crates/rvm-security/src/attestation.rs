@@ -104,7 +104,7 @@ impl AttestationChain {
     /// `chain_root: [u8; 32]` field.
     #[cfg(feature = "crypto-sha256")]
     fn extend_chain_hash(&mut self, hash: &[u8; 32]) {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let mut hasher = Sha256::new();
         hasher.update(self.chain_hash);
@@ -313,7 +313,7 @@ mod tests {
     fn test_chain_full() {
         let mut chain = AttestationChain::new();
         for i in 0..MAX_ATTESTATION_ENTRIES {
-            assert!(chain.add_boot_measurement([i as u8; 32]));
+            assert!(chain.add_boot_measurement([u8::try_from(i).unwrap_or(0xFF); 32]));
         }
         assert_eq!(chain.len(), MAX_ATTESTATION_ENTRIES);
         // Chain is now full

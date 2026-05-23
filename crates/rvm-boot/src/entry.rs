@@ -95,8 +95,7 @@ where
     // Parse DTB, enumerate CPUs, discover RAM size.
     {
         let tick = tick_fn();
-        ctx.sequence
-            .begin_stage(BootStage::HardwareDetect, tick)?;
+        ctx.sequence.begin_stage(BootStage::HardwareDetect, tick)?;
 
         // For QEMU virt with 128 MB RAM (from Makefile -m 128M).
         // A real implementation would parse the DTB at ctx.dtb_ptr.
@@ -138,8 +137,7 @@ where
     // Configure HCR_EL2, exception vectors, interrupt controller.
     {
         let tick = tick_fn();
-        ctx.sequence
-            .begin_stage(BootStage::HypervisorMode, tick)?;
+        ctx.sequence.begin_stage(BootStage::HypervisorMode, tick)?;
 
         let int_config = InterruptConfig { irq_count: 256 };
         hal.init_interrupts(&int_config)?;
@@ -175,8 +173,7 @@ where
     // Emit the genesis attestation record (BOOT_COMPLETE).
     {
         let tick = tick_fn();
-        ctx.sequence
-            .begin_stage(BootStage::FirstWitness, tick)?;
+        ctx.sequence.begin_stage(BootStage::FirstWitness, tick)?;
 
         let attestation = ctx.measured.get_attestation_digest();
         let digest = phase_digest(BootStage::FirstWitness, &attestation);
@@ -190,8 +187,7 @@ where
     // Hand off to the scheduler (never returns in production).
     {
         let tick = tick_fn();
-        ctx.sequence
-            .begin_stage(BootStage::SchedulerEntry, tick)?;
+        ctx.sequence.begin_stage(BootStage::SchedulerEntry, tick)?;
 
         let digest = phase_digest(BootStage::SchedulerEntry, &[]);
         ctx.measured

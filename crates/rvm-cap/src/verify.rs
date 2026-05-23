@@ -171,8 +171,7 @@ impl<const N: usize> ProofVerifier<N> {
         // 1. Ownership chain valid.
         let owner_ok = table
             .lookup(cap_index, cap_generation)
-            .map(|slot| slot.owner.as_u32() == ctx.expected_owner)
-            .unwrap_or(false);
+            .is_ok_and(|slot| slot.owner.as_u32() == ctx.expected_owner);
         valid &= owner_ok;
 
         // 2. Region bounds legal.
@@ -184,8 +183,7 @@ impl<const N: usize> ProofVerifier<N> {
         // 4. Delegation depth within limit.
         let depth_ok = tree
             .depth(cap_index)
-            .map(|d| d <= ctx.max_delegation_depth)
-            .unwrap_or(false);
+            .is_ok_and(|d| d <= ctx.max_delegation_depth);
         valid &= depth_ok;
 
         // 5. Nonce not replayed.
@@ -261,9 +259,8 @@ impl<const N: usize> ProofVerifier<N> {
             let parent_idx = tree.find_parent(current_idx);
             match parent_idx {
                 Some(pidx) => {
-                    let parent = match tree.get(pidx) {
-                        Some(p) => p,
-                        None => return Err(ProofError::DerivationChainBroken),
+                    let Some(parent) = tree.get(pidx) else {
+                        return Err(ProofError::DerivationChainBroken);
                     };
 
                     // Ancestor must be valid.
@@ -315,7 +312,7 @@ impl<const N: usize> ProofVerifier<N> {
             return false;
         }
         // O(1) hash-indexed lookup instead of linear scan.
-        let hash_slot = (nonce as usize) % NONCE_RING_SIZE;
+        let hash_slot = usize::try_from(nonce % NONCE_RING_SIZE as u64).unwrap_or(0);
         if self.nonce_hash[hash_slot] == nonce {
             return false;
         }
@@ -329,7 +326,7 @@ impl<const N: usize> ProofVerifier<N> {
         }
         self.nonce_ring[self.nonce_write_pos] = nonce;
         // Populate hash index for O(1) lookup.
-        let hash_slot = (nonce as usize) % NONCE_RING_SIZE;
+        let hash_slot = usize::try_from(nonce % NONCE_RING_SIZE as u64).unwrap_or(0);
         self.nonce_hash[hash_slot] = nonce;
         self.nonce_write_pos = (self.nonce_write_pos + 1) % NONCE_RING_SIZE;
         // Advance watermark: the watermark tracks the minimum nonce
@@ -377,13 +374,18 @@ mod tests {
         let owner = PartitionId::new(1);
         let token = CapToken::new(100, CapType::Region, all_rights(), 0);
         let (idx, gen) = table.insert_root(token, owner, 0).unwrap();
-        assert!(verifier.verify_p1(&table, idx, gen, CapRights::READ).is_ok());
+        assert!(verifier
+            .verify_p1(&table, idx, gen, CapRights::READ)
+            .is_ok());
     }
 
     #[test]
     fn test_p1_invalid_handle() {
         let (table, _, verifier) = setup();
-        assert_eq!(verifier.verify_p1(&table, 99, 0, CapRights::READ), Err(ProofError::InvalidHandle));
+        assert_eq!(
+            verifier.verify_p1(&table, 99, 0, CapRights::READ),
+            Err(ProofError::InvalidHandle)
+        );
     }
 
     #[test]
@@ -391,7 +393,10 @@ mod tests {
         let (mut table, _, verifier) = setup();
         let token = CapToken::new(100, CapType::Region, all_rights(), 5);
         let (idx, gen) = table.insert_root(token, PartitionId::new(1), 0).unwrap();
-        assert_eq!(verifier.verify_p1(&table, idx, gen, CapRights::READ), Err(ProofError::StaleCapability));
+        assert_eq!(
+            verifier.verify_p1(&table, idx, gen, CapRights::READ),
+            Err(ProofError::StaleCapability)
+        );
     }
 
     #[test]
@@ -399,7 +404,10 @@ mod tests {
         let (mut table, _, verifier) = setup();
         let token = CapToken::new(100, CapType::Region, CapRights::READ, 0);
         let (idx, gen) = table.insert_root(token, PartitionId::new(1), 0).unwrap();
-        assert_eq!(verifier.verify_p1(&table, idx, gen, CapRights::WRITE), Err(ProofError::InsufficientRights));
+        assert_eq!(
+            verifier.verify_p1(&table, idx, gen, CapRights::WRITE),
+            Err(ProofError::InsufficientRights)
+        );
     }
 
     #[test]
@@ -438,7 +446,10 @@ mod tests {
             nonce: 55,
         };
         assert!(verifier.verify_p2(&table, &tree, idx, gen, &ctx).is_ok());
-        assert_eq!(verifier.verify_p2(&table, &tree, idx, gen, &ctx), Err(ProofError::PolicyViolation));
+        assert_eq!(
+            verifier.verify_p2(&table, &tree, idx, gen, &ctx),
+            Err(ProofError::PolicyViolation)
+        );
     }
 
     #[test]
@@ -467,7 +478,9 @@ mod tests {
         tree.add_child(root_idx, child_idx, 1, 1).unwrap();
 
         // P3 should follow child → root and succeed.
-        assert!(verifier.verify_p3(&table, &tree, child_idx, child_gen, 8).is_ok());
+        assert!(verifier
+            .verify_p3(&table, &tree, child_idx, child_gen, 8)
+            .is_ok());
     }
 
     #[test]
@@ -535,7 +548,9 @@ mod tests {
             max_delegation_depth: 8,
             nonce: 4097,
         };
-        assert!(verifier.verify_p2(&table, &tree, idx, gen, &ctx_new).is_ok());
+        assert!(verifier
+            .verify_p2(&table, &tree, idx, gen, &ctx_new)
+            .is_ok());
 
         // Nonce 1 should be rejected by the watermark even though it
         // has been evicted from the ring.

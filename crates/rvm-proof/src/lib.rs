@@ -43,30 +43,30 @@ pub mod policy;
 pub mod signer;
 pub mod tee;
 pub mod tee_provider;
-pub mod tee_verifier;
 pub mod tee_signer;
+pub mod tee_verifier;
 
 // Re-export signer traits and types for ergonomic access.
-pub use signer::{SignatureError, WitnessSigner};
-#[cfg(feature = "crypto-sha256")]
-pub use signer::HmacSha256WitnessSigner;
 #[cfg(feature = "crypto-sha256")]
 pub use signer::DualHmacSigner;
-#[cfg(feature = "crypto-sha256")]
-pub use signer::{KeyBundle, derive_witness_key, derive_key_bundle, dev_measurement};
 #[cfg(feature = "ed25519")]
 pub use signer::Ed25519WitnessSigner;
+#[cfg(feature = "crypto-sha256")]
+pub use signer::HmacSha256WitnessSigner;
 #[cfg(any(test, feature = "null-signer"))]
 pub use signer::NullSigner;
+#[cfg(feature = "crypto-sha256")]
+pub use signer::{derive_key_bundle, derive_witness_key, dev_measurement, KeyBundle};
+pub use signer::{SignatureError, WitnessSigner};
 pub use tee::{TeePlatform, TeeQuoteProvider, TeeQuoteVerifier};
 #[cfg(feature = "crypto-sha256")]
 pub use tee_provider::SoftwareTeeProvider;
 #[cfg(feature = "crypto-sha256")]
-pub use tee_verifier::SoftwareTeeVerifier;
-#[cfg(feature = "crypto-sha256")]
 pub use tee_signer::TeeWitnessSigner;
+#[cfg(feature = "crypto-sha256")]
+pub use tee_verifier::SoftwareTeeVerifier;
 
-use rvm_types::{CapRights, CapToken, RvmError, RvmResult, WitnessHash, fnv1a_64};
+use rvm_types::{fnv1a_64, CapRights, CapToken, RvmError, RvmResult, WitnessHash};
 
 /// The tier of proof required for a state transition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -163,6 +163,8 @@ pub fn verify(proof: &Proof, expected_commitment: &WitnessHash) -> RvmResult<()>
             Ok(())
         }
         ProofTier::Witness => {
+            // Each link is 16 bytes: 8 bytes prev_hash + 8 bytes record_hash.
+            const LINK_SIZE: usize = 16;
             // Witness chain verification: the proof data must contain at
             // least one 16-byte witness record pair (prev_hash: u64,
             // record_hash: u64) and each record's prev_hash must equal
@@ -171,8 +173,6 @@ pub fn verify(proof: &Proof, expected_commitment: &WitnessHash) -> RvmResult<()>
                 return Err(RvmError::ProofInvalid);
             }
             let data = &proof.data[..proof.data_len as usize];
-            // Each link is 16 bytes: 8 bytes prev_hash + 8 bytes record_hash.
-            const LINK_SIZE: usize = 16;
             if data.len() < LINK_SIZE {
                 return Err(RvmError::ProofInvalid);
             }

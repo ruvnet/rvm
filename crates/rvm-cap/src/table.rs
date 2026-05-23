@@ -357,7 +357,12 @@ mod tests {
     use super::*;
 
     fn test_token(id: u64) -> CapToken {
-        CapToken::new(id, CapType::Region, CapRights::READ.union(CapRights::WRITE), 0)
+        CapToken::new(
+            id,
+            CapType::Region,
+            CapRights::READ.union(CapRights::WRITE),
+            0,
+        )
     }
 
     #[test]
@@ -424,8 +429,9 @@ mod tests {
 
         let (parent_idx, _) = table.insert_root(token, owner, 0).unwrap();
         let derived = CapToken::new(501, CapType::Region, CapRights::READ, 0);
-        let (child_idx, child_gen) =
-            table.insert_derived(derived, owner, 1, parent_idx, 42).unwrap();
+        let (child_idx, child_gen) = table
+            .insert_derived(derived, owner, 1, parent_idx, 42)
+            .unwrap();
 
         let slot = table.lookup(child_idx, child_gen).unwrap();
         assert_eq!(slot.depth, 1);

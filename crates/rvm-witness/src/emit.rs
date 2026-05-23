@@ -18,7 +18,11 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
     /// Emits a partition creation witness.
     #[must_use]
     pub fn emit_partition_create(
-        &self, actor: u32, new_partition_id: u64, cap_hash: u32, ts: u64,
+        &self,
+        actor: u32,
+        new_partition_id: u64,
+        cap_hash: u32,
+        ts: u64,
     ) -> u64 {
         let mut r = WitnessRecord::zeroed();
         r.action_kind = ActionKind::PartitionCreate as u8;
@@ -33,7 +37,11 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
     /// Emits a partition destroy witness.
     #[must_use]
     pub fn emit_partition_destroy(
-        &self, actor: u32, partition_id: u64, cap_hash: u32, ts: u64,
+        &self,
+        actor: u32,
+        partition_id: u64,
+        cap_hash: u32,
+        ts: u64,
     ) -> u64 {
         let mut r = WitnessRecord::zeroed();
         r.action_kind = ActionKind::PartitionDestroy as u8;
@@ -48,7 +56,12 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
     /// Emits a capability grant witness.
     #[must_use]
     pub fn emit_capability_grant(
-        &self, actor: u32, target: u64, cap_hash: u32, payload: [u8; 8], ts: u64,
+        &self,
+        actor: u32,
+        target: u64,
+        cap_hash: u32,
+        payload: [u8; 8],
+        ts: u64,
     ) -> u64 {
         let mut r = WitnessRecord::zeroed();
         r.action_kind = ActionKind::CapabilityGrant as u8;
@@ -63,9 +76,7 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
 
     /// Emits a capability revoke witness.
     #[must_use]
-    pub fn emit_capability_revoke(
-        &self, actor: u32, target: u64, cap_hash: u32, ts: u64,
-    ) -> u64 {
+    pub fn emit_capability_revoke(&self, actor: u32, target: u64, cap_hash: u32, ts: u64) -> u64 {
         let mut r = WitnessRecord::zeroed();
         r.action_kind = ActionKind::CapabilityRevoke as u8;
         r.proof_tier = 1;
@@ -79,7 +90,12 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
     /// Emits a memory region map witness.
     #[must_use]
     pub fn emit_memory_map(
-        &self, actor: u32, region_id: u64, cap_hash: u32, payload: [u8; 8], ts: u64,
+        &self,
+        actor: u32,
+        region_id: u64,
+        cap_hash: u32,
+        payload: [u8; 8],
+        ts: u64,
     ) -> u64 {
         let mut r = WitnessRecord::zeroed();
         r.action_kind = ActionKind::RegionMap as u8;
@@ -94,9 +110,7 @@ impl<'a, const N: usize> WitnessEmitter<'a, N> {
 
     /// Emits a proof rejection witness.
     #[must_use]
-    pub fn emit_proof_rejected(
-        &self, actor: u32, target: u64, cap_hash: u32, ts: u64,
-    ) -> u64 {
+    pub fn emit_proof_rejected(&self, actor: u32, target: u64, cap_hash: u32, ts: u64) -> u64 {
         let mut r = WitnessRecord::zeroed();
         r.action_kind = ActionKind::ProofRejected as u8;
         r.actor_partition_id = actor;
@@ -129,9 +143,9 @@ mod tests {
     fn test_emit_multiple() {
         let log = WitnessLog::<16>::new();
         let emitter = WitnessEmitter::new(&log);
-        emitter.emit_partition_create(1, 10, 0, 100);
-        emitter.emit_capability_grant(1, 2, 0, [0; 8], 200);
-        emitter.emit_memory_map(1, 50, 0, [0; 8], 300);
+        let _ = emitter.emit_partition_create(1, 10, 0, 100);
+        let _ = emitter.emit_capability_grant(1, 2, 0, [0; 8], 200);
+        let _ = emitter.emit_memory_map(1, 50, 0, [0; 8], 300);
         assert_eq!(log.total_emitted(), 3);
     }
 }

@@ -247,6 +247,12 @@ impl<const N: usize> CapabilityManager<N> {
 
     /// Like [`grant`](Self::grant) but verifies the caller owns the
     /// source capability.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`CapError`] if the source capability is invalid, stale,
+    /// or not owned by `caller_id`, or if the requested rights exceed those
+    /// of the source capability.
     pub fn grant_checked(
         &mut self,
         source_index: u32,
@@ -298,22 +304,16 @@ impl<const N: usize> CapabilityManager<N> {
             self.grant_policy,
         )?;
 
-        let (child_index, child_generation) = self.table.insert_derived(
-            derived_token,
-            target_owner,
-            depth,
-            source_index,
-            badge,
-        )?;
+        let (child_index, child_generation) =
+            self.table
+                .insert_derived(derived_token, target_owner, depth, source_index, badge)?;
 
         // Fix 7: if derivation tracking fails, roll back the table insertion.
         if self.config.track_derivation {
-            if let Err(e) = self.derivation.add_child(
-                source_index,
-                child_index,
-                depth,
-                u64::from(self.epoch),
-            ) {
+            if let Err(e) =
+                self.derivation
+                    .add_child(source_index, child_index, depth, u64::from(self.epoch))
+            {
                 // Roll back the table insertion to prevent a slot leak.
                 self.table.force_invalidate(child_index);
                 return Err(e);
@@ -347,14 +347,12 @@ impl<const N: usize> CapabilityManager<N> {
     ///
     /// Returns a [`CapError`] if the handle is invalid or already revoked.
     pub fn revoke(&mut self, index: u32, generation: u32) -> CapResult<RevokeResult> {
-        let result = revoke_capability(
-            &mut self.table,
-            &mut self.derivation,
-            index,
-            generation,
-        )?;
+        let result = revoke_capability(&mut self.table, &mut self.derivation, index, generation)?;
 
-        self.stats.caps_revoked = self.stats.caps_revoked.wrapping_add(result.revoked_count as u64);
+        self.stats.caps_revoked = self
+            .stats
+            .caps_revoked
+            .wrapping_add(result.revoked_count as u64);
         self.stats.revoke_operations = self.stats.revoke_operations.wrapping_add(1);
 
         Ok(result)
@@ -371,7 +369,8 @@ impl<const N: usize> CapabilityManager<N> {
         cap_generation: u32,
         required_rights: CapRights,
     ) -> Result<(), ProofError> {
-        self.verifier.verify_p1(&self.table, cap_index, cap_generation, required_rights)
+        self.verifier
+            .verify_p1(&self.table, cap_index, cap_generation, required_rights)
     }
 
     /// P2 verification: structural invariant validation (< 100 us).
@@ -385,7 +384,13 @@ impl<const N: usize> CapabilityManager<N> {
         cap_generation: u32,
         ctx: &PolicyContext,
     ) -> Result<(), ProofError> {
-        self.verifier.verify_p2(&self.table, &self.derivation, cap_index, cap_generation, ctx)
+        self.verifier.verify_p2(
+            &self.table,
+            &self.derivation,
+            cap_index,
+            cap_generation,
+            ctx,
+        )
     }
 
     /// P3: Deep proof — derivation chain integrity verification.
@@ -403,8 +408,13 @@ impl<const N: usize> CapabilityManager<N> {
         cap_generation: u32,
         max_depth: u8,
     ) -> Result<(), ProofError> {
-        self.verifier
-            .verify_p3(&self.table, &self.derivation, cap_index, cap_generation, max_depth)
+        self.verifier.verify_p3(
+            &self.table,
+            &self.derivation,
+            cap_index,
+            cap_generation,
+            max_depth,
+        )
     }
 
     /// Returns a reference to the underlying table.
@@ -478,10 +488,18 @@ mod tests {
             .unwrap();
 
         let (c1_idx, c1_gen) = mgr
-            .grant(root_idx, root_gen, CapRights::READ.union(CapRights::GRANT), 1, target)
+            .grant(
+                root_idx,
+                root_gen,
+                CapRights::READ.union(CapRights::GRANT),
+                1,
+                target,
+            )
             .unwrap();
 
-        let _ = mgr.grant(c1_idx, c1_gen, CapRights::READ, 2, target).unwrap();
+        let _ = mgr
+            .grant(c1_idx, c1_gen, CapRights::READ, 2, target)
+            .unwrap();
 
         assert_eq!(mgr.len(), 3);
         let result = mgr.revoke(root_idx, root_gen).unwrap();
@@ -494,7 +512,9 @@ mod tests {
         let mut mgr = CapabilityManager::<64>::new(config);
         let owner = PartitionId::new(1);
 
-        let (i0, g0) = mgr.create_root_capability(CapType::Region, all_rights(), 0, owner).unwrap();
+        let (i0, g0) = mgr
+            .create_root_capability(CapType::Region, all_rights(), 0, owner)
+            .unwrap();
         let (i1, g1) = mgr.grant(i0, g0, all_rights(), 1, owner).unwrap();
         let (i2, g2) = mgr.grant(i1, g1, all_rights(), 2, owner).unwrap();
 
@@ -507,11 +527,16 @@ mod tests {
         let mut mgr = CapabilityManager::<64>::with_defaults();
         let owner = PartitionId::new(1);
 
-        let (idx, gen) = mgr.create_root_capability(CapType::Region, all_rights(), 0, owner).unwrap();
+        let (idx, gen) = mgr
+            .create_root_capability(CapType::Region, all_rights(), 0, owner)
+            .unwrap();
         assert!(mgr.verify_p1(idx, gen, CapRights::READ).is_ok());
 
         mgr.increment_epoch();
-        assert_eq!(mgr.verify_p1(idx, gen, CapRights::READ), Err(ProofError::StaleCapability));
+        assert_eq!(
+            mgr.verify_p1(idx, gen, CapRights::READ),
+            Err(ProofError::StaleCapability)
+        );
     }
 
     #[test]

@@ -308,20 +308,23 @@ pub fn dispatch_host_call<H: HostContext>(
             Err(e) => HostCallResult::Error(e),
         },
         #[cfg(feature = "gpu")]
-        HostFunction::GpuTransfer => match ctx.gpu_transfer(agent_id, args.arg0, args.arg1, args.arg2) {
-            Ok(v) => HostCallResult::Success(v),
-            Err(e) => HostCallResult::Error(e),
-        },
+        HostFunction::GpuTransfer => {
+            match ctx.gpu_transfer(agent_id, args.arg0, args.arg1, args.arg2) {
+                Ok(v) => HostCallResult::Success(v),
+                Err(e) => HostCallResult::Error(e),
+            }
+        }
         #[cfg(feature = "gpu")]
         HostFunction::GpuSync => match ctx.gpu_sync(agent_id) {
             Ok(v) => HostCallResult::Success(v),
             Err(e) => HostCallResult::Error(e),
         },
         #[cfg(not(feature = "gpu"))]
-        HostFunction::GpuLaunch | HostFunction::GpuAlloc | HostFunction::GpuFree
-        | HostFunction::GpuTransfer | HostFunction::GpuSync => {
-            HostCallResult::Error(RvmError::InternalError)
-        }
+        HostFunction::GpuLaunch
+        | HostFunction::GpuAlloc
+        | HostFunction::GpuFree
+        | HostFunction::GpuTransfer
+        | HostFunction::GpuSync => HostCallResult::Error(RvmError::InternalError),
     }
 }
 
@@ -341,7 +344,7 @@ pub fn dispatch_host_call_stub(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rvm_types::{CapType, CapToken};
+    use rvm_types::{CapToken, CapType};
 
     fn make_token(rights: CapRights) -> CapToken {
         CapToken::new(1, CapType::Partition, rights, 0)
@@ -357,7 +360,8 @@ mod tests {
     fn test_get_id() {
         let agent = AgentId::from_badge(42);
         let token = make_token(all_rights());
-        let result = dispatch_host_call_stub(agent, HostFunction::GetId, &HostCallArgs::empty(), &token);
+        let result =
+            dispatch_host_call_stub(agent, HostFunction::GetId, &HostCallArgs::empty(), &token);
         assert_eq!(result, HostCallResult::Success(42));
     }
 
@@ -365,29 +369,39 @@ mod tests {
     fn test_capability_check_fails() {
         let agent = AgentId::from_badge(1);
         let token = make_token(CapRights::READ); // No WRITE
-        let result = dispatch_host_call_stub(
-            agent,
-            HostFunction::Send,
-            &HostCallArgs::empty(),
-            &token,
+        let result =
+            dispatch_host_call_stub(agent, HostFunction::Send, &HostCallArgs::empty(), &token);
+        assert_eq!(
+            result,
+            HostCallResult::Error(RvmError::InsufficientCapability)
         );
-        assert_eq!(result, HostCallResult::Error(RvmError::InsufficientCapability));
     }
 
     #[test]
     fn test_alloc_zero_pages() {
         let agent = AgentId::from_badge(1);
         let token = make_token(all_rights());
-        let args = HostCallArgs { arg0: 0, arg1: 0, arg2: 0 };
+        let args = HostCallArgs {
+            arg0: 0,
+            arg1: 0,
+            arg2: 0,
+        };
         let result = dispatch_host_call_stub(agent, HostFunction::Alloc, &args, &token);
-        assert_eq!(result, HostCallResult::Error(RvmError::ResourceLimitExceeded));
+        assert_eq!(
+            result,
+            HostCallResult::Error(RvmError::ResourceLimitExceeded)
+        );
     }
 
     #[test]
     fn test_alloc_success() {
         let agent = AgentId::from_badge(1);
         let token = make_token(all_rights());
-        let args = HostCallArgs { arg0: 4, arg1: 0, arg2: 0 };
+        let args = HostCallArgs {
+            arg0: 4,
+            arg1: 0,
+            arg2: 0,
+        };
         let result = dispatch_host_call_stub(agent, HostFunction::Alloc, &args, &token);
         assert_eq!(result, HostCallResult::Success(4));
     }
@@ -396,13 +410,16 @@ mod tests {
     fn test_yield_readonly() {
         let agent = AgentId::from_badge(1);
         let token = make_token(CapRights::READ);
-        let result = dispatch_host_call_stub(agent, HostFunction::Yield, &HostCallArgs::empty(), &token);
+        let result =
+            dispatch_host_call_stub(agent, HostFunction::Yield, &HostCallArgs::empty(), &token);
         assert!(result.is_success());
     }
 
     #[test]
     fn test_custom_host_context() {
-        struct CountingCtx { send_count: u64 }
+        struct CountingCtx {
+            send_count: u64,
+        }
         impl HostContext for CountingCtx {
             fn send(&mut self, _: AgentId, _: u64, length: u64) -> RvmResult<u64> {
                 self.send_count += 1;
@@ -413,7 +430,11 @@ mod tests {
         let agent = AgentId::from_badge(1);
         let token = make_token(all_rights());
         let mut ctx = CountingCtx { send_count: 0 };
-        let args = HostCallArgs { arg0: 2, arg1: 100, arg2: 0 };
+        let args = HostCallArgs {
+            arg0: 2,
+            arg1: 100,
+            arg2: 0,
+        };
 
         let result = dispatch_host_call(agent, HostFunction::Send, &args, &token, &mut ctx);
         assert_eq!(result, HostCallResult::Success(100));

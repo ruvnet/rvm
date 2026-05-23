@@ -68,13 +68,7 @@ impl SwitchContext {
     /// VMID, and stage-2 page table base.
     ///
     /// This prepares a context for first entry into a guest partition.
-    pub fn init(
-        &mut self,
-        entry_point: u64,
-        stack_pointer: u64,
-        vmid: u16,
-        s2_table_base: u64,
-    ) {
+    pub fn init(&mut self, entry_point: u64, stack_pointer: u64, vmid: u16, s2_table_base: u64) {
         self.elr_el2 = entry_point;
         self.sp_el1 = stack_pointer;
         // AArch64 EL1h mode, all DAIF masked.

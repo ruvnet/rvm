@@ -410,8 +410,7 @@ fn decompress(input: &[u8], output: &mut [u8]) -> RvmResult<usize> {
             return Err(RvmError::CheckpointCorrupted);
         }
         let tag = input[in_pos];
-        let block_len =
-            u16::from_le_bytes([input[in_pos + 1], input[in_pos + 2]]) as usize;
+        let block_len = u16::from_le_bytes([input[in_pos + 1], input[in_pos + 2]]) as usize;
         in_pos += 3;
 
         match tag {
@@ -526,14 +525,13 @@ mod tests {
         let data = b"region state snapshot";
         let mut compressed = [0u8; 256];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(100), 42, data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(100), 42, data, &mut compressed).unwrap();
 
         assert_eq!(ckpt.id, CheckpointId::new(100));
         assert_eq!(ckpt.region_id, rid(1));
         assert_eq!(ckpt.witness_sequence, 42);
-        assert_eq!(ckpt.uncompressed_size, data.len() as u32);
-        assert_eq!(ckpt.compressed_size, csize as u32);
+        assert_eq!(ckpt.uncompressed_size, u32::try_from(data.len()).unwrap());
+        assert_eq!(ckpt.compressed_size, u32::try_from(csize).unwrap());
         assert_eq!(ckpt.uncompressed_hash, fnv1a_hash(data));
     }
 
@@ -553,8 +551,7 @@ mod tests {
         let data = b"original state";
         let mut compressed = [0u8; 256];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed).unwrap();
 
         let mut output = [0u8; 256];
         let result = pipeline
@@ -562,7 +559,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.region_id, rid(1));
-        assert_eq!(result.size_bytes, data.len() as u32);
+        assert_eq!(result.size_bytes, u32::try_from(data.len()).unwrap());
         assert_eq!(result.deltas_applied, 0);
         assert_eq!(&output[..data.len()], data.as_slice());
     }
@@ -574,8 +571,7 @@ mod tests {
         let data = b"Hello, World!!!"; // 15 bytes
         let mut compressed = [0u8; 256];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed).unwrap();
 
         // Create a delta that overwrites "World" with "Rust!"
         let patch = b"Rust!";
@@ -608,8 +604,7 @@ mod tests {
         let data = [0u8; 16];
         let mut compressed = [0u8; 256];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed).unwrap();
 
         // Delta 1: write 0xAA at offset 0, length 4.
         pipeline
@@ -727,8 +722,7 @@ mod tests {
         let data = b"valid data";
         let mut compressed = [0u8; 256];
         let (mut ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed).unwrap();
 
         // Corrupt the expected hash.
         ckpt.uncompressed_hash = 0xDEAD_BEEF;
@@ -747,8 +741,7 @@ mod tests {
         let data = b"some state";
         let mut compressed = [0u8; 256];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed).unwrap();
 
         pipeline
             .add_delta(WitnessDelta {
@@ -762,12 +755,8 @@ mod tests {
         let patch = b"good";
         let mut output = [0u8; 256];
         assert_eq!(
-            pipeline.reconstruct(
-                &ckpt,
-                &compressed[..csize],
-                &mut output,
-                |_| patch.as_slice()
-            ),
+            pipeline.reconstruct(&ckpt, &compressed[..csize], &mut output, |_| patch
+                .as_slice()),
             Err(RvmError::WitnessVerificationFailed)
         );
     }
@@ -779,8 +768,7 @@ mod tests {
         let data = b"short";
         let mut compressed = [0u8; 256];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed).unwrap();
 
         let patch = b"overrun!";
         pipeline
@@ -794,12 +782,8 @@ mod tests {
 
         let mut output = [0u8; 256];
         assert_eq!(
-            pipeline.reconstruct(
-                &ckpt,
-                &compressed[..csize],
-                &mut output,
-                |_| patch.as_slice()
-            ),
+            pipeline.reconstruct(&ckpt, &compressed[..csize], &mut output, |_| patch
+                .as_slice()),
             Err(RvmError::CheckpointCorrupted)
         );
     }
@@ -816,22 +800,21 @@ mod tests {
 
     #[test]
     fn reconstruction_at_max_delta_capacity() {
+        static PATCHES: [[u8; 1]; 4] = [[0xAA], [0xBB], [0xCC], [0xDD]];
         // Pipeline with capacity 4, fill it to max.
         let mut pipeline = ReconstructionPipeline::<4>::new();
 
         let data = [0u8; 32];
         let mut compressed = [0u8; 256];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed).unwrap();
 
         // Add exactly 4 deltas (each writes 1 byte at a different offset).
-        static PATCHES: [[u8; 1]; 4] = [[0xAA], [0xBB], [0xCC], [0xDD]];
         for (i, patch) in PATCHES.iter().enumerate() {
             pipeline
                 .add_delta(WitnessDelta {
-                    sequence: (i + 1) as u64,
-                    offset: (i * 4) as u32,
+                    sequence: u64::try_from(i + 1).unwrap(),
+                    offset: u32::try_from(i * 4).unwrap(),
                     length: 1,
                     data_hash: fnv1a_hash(patch),
                 })
@@ -854,7 +837,7 @@ mod tests {
         let mut output = [0u8; 256];
         let result = pipeline
             .reconstruct(&ckpt, &compressed[..csize], &mut output, |d| {
-                &PATCHES[(d.sequence - 1) as usize]
+                &PATCHES[usize::try_from(d.sequence - 1).unwrap()]
             })
             .unwrap();
 
@@ -867,15 +850,13 @@ mod tests {
 
     #[test]
     fn reconstruction_single_delta_capacity() {
+        static PATCH_ZERO: [u8; 1] = [0x00];
         let mut pipeline = ReconstructionPipeline::<1>::new();
 
         let data = [0xFF; 8];
         let mut compressed = [0u8; 64];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed)
-                .unwrap();
-
-        static PATCH_ZERO: [u8; 1] = [0x00];
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed).unwrap();
         pipeline
             .add_delta(WitnessDelta {
                 sequence: 1,
@@ -957,8 +938,7 @@ mod tests {
         let data = [0u8; 32];
         let mut compressed = [0u8; 256];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed).unwrap();
 
         // Output buffer smaller than uncompressed size.
         let mut small_output = [0u8; 16];
@@ -975,8 +955,7 @@ mod tests {
         let data = [0u8; 32];
         let mut compressed = [0u8; 256];
         let (ckpt, _csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed).unwrap();
 
         // Pass truncated compressed data.
         let mut output = [0u8; 256];
@@ -988,16 +967,15 @@ mod tests {
 
     #[test]
     fn reconstruction_delta_data_shorter_than_length() {
+        static SHORT_PATCH: [u8; 2] = [0xAA, 0xBB];
         let mut pipeline = ReconstructionPipeline::<4>::new();
 
         let data = [0u8; 16];
         let mut compressed = [0u8; 256];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed).unwrap();
 
         // Delta says length=4 but we return only 2 bytes.
-        static SHORT_PATCH: [u8; 2] = [0xAA, 0xBB];
         pipeline
             .add_delta(WitnessDelta {
                 sequence: 1,
@@ -1016,11 +994,11 @@ mod tests {
 
     #[test]
     fn reconstruction_final_hash_changes_with_deltas() {
+        static XPATCH: [u8; 1] = [b'X'];
         let data = b"original data!!"; // 15 bytes
         let mut compressed = [0u8; 256];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed)
-                .unwrap();
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, data, &mut compressed).unwrap();
 
         // Reconstruct without deltas.
         let pipeline_no_deltas = ReconstructionPipeline::<4>::new();
@@ -1031,7 +1009,6 @@ mod tests {
 
         // Reconstruct with one delta.
         let mut pipeline_with_delta = ReconstructionPipeline::<4>::new();
-        static XPATCH: [u8; 1] = [b'X'];
         pipeline_with_delta
             .add_delta(WitnessDelta {
                 sequence: 1,
@@ -1051,17 +1028,15 @@ mod tests {
 
     #[test]
     fn reconstruction_overlapping_deltas() {
+        static FIRST: [u8; 2] = [0xAA, 0xAA];
+        static SECOND: [u8; 2] = [0xBB, 0xBB];
         // Two deltas that write to the same offset -- second one wins.
         let mut pipeline = ReconstructionPipeline::<4>::new();
 
         let data = [0u8; 8];
         let mut compressed = [0u8; 64];
         let (ckpt, csize) =
-            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed)
-                .unwrap();
-
-        static FIRST: [u8; 2] = [0xAA, 0xAA];
-        static SECOND: [u8; 2] = [0xBB, 0xBB];
+            create_checkpoint(rid(1), CheckpointId::new(1), 0, &data, &mut compressed).unwrap();
 
         pipeline
             .add_delta(WitnessDelta {
@@ -1083,7 +1058,11 @@ mod tests {
         let mut output = [0u8; 64];
         let result = pipeline
             .reconstruct(&ckpt, &compressed[..csize], &mut output, |d| {
-                if d.sequence == 1 { &FIRST } else { &SECOND }
+                if d.sequence == 1 {
+                    &FIRST
+                } else {
+                    &SECOND
+                }
             })
             .unwrap();
 

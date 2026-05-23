@@ -51,11 +51,9 @@ pub use device::{ActiveLease, DeviceInfo, DeviceLeaseManager};
 pub use ipc::{IpcManager, IpcMessage, MessageQueue};
 pub use lifecycle::valid_transition;
 pub use manager::PartitionManager;
-pub use merge::{merge_preconditions_met, merge_preconditions_full, MergePreconditionError};
+pub use merge::{merge_preconditions_full, merge_preconditions_met, MergePreconditionError};
 pub use ops::{PartitionConfig, PartitionOps, SplitConfig};
-pub use partition::{
-    CutPressureLocal, Partition, PartitionState, PartitionType, MAX_PARTITIONS,
-};
+pub use partition::{CutPressureLocal, Partition, PartitionState, PartitionType, MAX_PARTITIONS};
 pub use split::scored_region_assignment;
 
 // Re-export commonly used types from rvm-types.

@@ -6,7 +6,7 @@ use rvm_witness::WitnessLog;
 
 fn bench_witness_append(c: &mut Criterion) {
     c.bench_function("witness_log_append_256", |b| {
-        let mut log = WitnessLog::<256>::new();
+        let log = WitnessLog::<256>::new();
         b.iter(|| {
             black_box(log.append(WitnessRecord::zeroed()));
         });

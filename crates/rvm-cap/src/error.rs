@@ -51,9 +51,9 @@ impl fmt::Display for CapError {
 impl From<CapError> for RvmError {
     fn from(e: CapError) -> Self {
         match e {
-            CapError::InvalidHandle
-            | CapError::GrantNotPermitted
-            | CapError::RightsEscalation => RvmError::InsufficientCapability,
+            CapError::InvalidHandle | CapError::GrantNotPermitted | CapError::RightsEscalation => {
+                RvmError::InsufficientCapability
+            }
             CapError::StaleHandle | CapError::Revoked => RvmError::StaleCapability,
             CapError::TableFull | CapError::TreeFull => RvmError::ResourceLimitExceeded,
             CapError::DelegationDepthExceeded => RvmError::DelegationDepthExceeded,
@@ -103,12 +103,14 @@ impl fmt::Display for ProofError {
 impl From<ProofError> for RvmError {
     fn from(e: ProofError) -> Self {
         match e {
-            ProofError::InvalidHandle
-            | ProofError::InsufficientRights => RvmError::InsufficientCapability,
+            ProofError::InvalidHandle | ProofError::InsufficientRights => {
+                RvmError::InsufficientCapability
+            }
             ProofError::StaleCapability => RvmError::StaleCapability,
-            ProofError::PolicyViolation => RvmError::ProofInvalid,
+            ProofError::PolicyViolation | ProofError::DerivationChainBroken => {
+                RvmError::ProofInvalid
+            }
             ProofError::P3NotImplemented => RvmError::Unsupported,
-            ProofError::DerivationChainBroken => RvmError::ProofInvalid,
         }
     }
 }

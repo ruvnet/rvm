@@ -70,10 +70,8 @@ pub use bridge::{CoherenceBackend, MinCutBackend};
 pub use engine::{CoherenceDecision, CoherenceEngine, DefaultCoherenceEngine};
 pub use graph::{CoherenceGraph, GraphError, NeighborIter};
 pub use mincut::{MinCutBridge, MinCutResult};
-pub use pressure::{
-    MergeSignal, PressureResult, MERGE_COHERENCE_THRESHOLD_BP, SPLIT_THRESHOLD_BP,
-};
-pub use scoring::{PartitionCoherenceResult, compute_coherence_score, recompute_all_scores};
+pub use pressure::{MergeSignal, PressureResult, MERGE_COHERENCE_THRESHOLD_BP, SPLIT_THRESHOLD_BP};
+pub use scoring::{compute_coherence_score, recompute_all_scores, PartitionCoherenceResult};
 
 #[cfg(feature = "ruvector")]
 pub use engine::RuVectorCoherenceEngine;
@@ -163,5 +161,9 @@ pub fn phi_to_coherence_bp(phi: PhiValue) -> u16 {
     // Stub: linear mapping from Phi fixed-point to basis points,
     // clamped to [0, 10000].
     let raw = phi.as_fixed();
-    if raw >= 10_000 { 10_000 } else { raw as u16 }
+    if raw >= 10_000 {
+        10_000
+    } else {
+        raw as u16
+    }
 }

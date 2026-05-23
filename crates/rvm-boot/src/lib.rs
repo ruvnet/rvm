@@ -63,7 +63,7 @@ pub mod sequence;
 use rvm_types::{RvmError, RvmResult};
 
 // Re-export key types for convenience.
-pub use entry::{BootContext, run_boot_sequence};
+pub use entry::{run_boot_sequence, BootContext};
 pub use hal_init::{HalInit, InterruptConfig, MmuConfig, StubHal, UartConfig};
 pub use measured::MeasuredBootState;
 pub use sequence::{BootSequence, BootStage, PhaseTiming};

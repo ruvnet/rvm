@@ -41,11 +41,10 @@ pub mod validation;
 use rvm_types::{CapRights, CapToken, CapType, RvmError, RvmResult, WitnessHash};
 
 // Re-export key types for convenience.
-pub use attestation::{AttestationChain, AttestationReport, verify_attestation};
+pub use attestation::{verify_attestation, AttestationChain, AttestationReport};
 pub use budget::{DmaBudget, ResourceQuota};
 pub use gate::{
-    GateRequest, GateResponse, P3WitnessChain, SecurityError, SecurityGate,
-    SignedSecurityGate,
+    GateRequest, GateResponse, P3WitnessChain, SecurityError, SecurityGate, SignedSecurityGate,
 };
 
 /// The result of a security policy decision.

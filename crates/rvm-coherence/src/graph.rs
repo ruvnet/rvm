@@ -156,14 +156,14 @@ impl<const MAX_NODES: usize, const MAX_EDGES: usize> CoherenceGraph<MAX_NODES, M
 
     /// Remove a partition node and all its incident edges.
     pub fn remove_node(&mut self, partition_id: PartitionId) -> Result<(), GraphError> {
-        let idx = self.find_node(partition_id).ok_or(GraphError::NodeNotFound)?;
+        let idx = self
+            .find_node(partition_id)
+            .ok_or(GraphError::NodeNotFound)?;
 
         // Remove all edges where this node is source or destination.
         // remove_edge_by_index maintains adj_matrix and cached weights.
         for i in 0..MAX_EDGES {
-            if self.edges[i].active
-                && (self.edges[i].from == idx || self.edges[i].to == idx)
-            {
+            if self.edges[i].active && (self.edges[i].from == idx || self.edges[i].to == idx) {
                 self.remove_edge_by_index(i as EdgeIdx);
             }
         }
@@ -324,10 +324,7 @@ impl<const MAX_NODES: usize, const MAX_EDGES: usize> CoherenceGraph<MAX_NODES, M
         };
         let mut sum = 0u64;
         for i in 0..MAX_EDGES {
-            if self.edges[i].active
-                && self.edges[i].from == idx
-                && self.edges[i].to == idx
-            {
+            if self.edges[i].active && self.edges[i].from == idx && self.edges[i].to == idx {
                 sum = sum.saturating_add(self.edges[i].weight);
             }
         }
@@ -422,16 +419,13 @@ impl<const MAX_NODES: usize, const MAX_EDGES: usize> CoherenceGraph<MAX_NODES, M
 
     /// Iterate over all active edges as `(edge_idx, from_node, to_node, weight)`.
     pub fn active_edges(&self) -> impl Iterator<Item = (EdgeIdx, NodeIdx, NodeIdx, u64)> + '_ {
-        self.edges
-            .iter()
-            .enumerate()
-            .filter_map(|(i, e)| {
-                if e.active {
-                    Some((i as EdgeIdx, e.from, e.to, e.weight))
-                } else {
-                    None
-                }
-            })
+        self.edges.iter().enumerate().filter_map(|(i, e)| {
+            if e.active {
+                Some((i as EdgeIdx, e.from, e.to, e.weight))
+            } else {
+                None
+            }
+        })
     }
 
     /// Decay all edge weights by the given percentage (in basis points).
@@ -493,10 +487,8 @@ impl<const MAX_NODES: usize, const MAX_EDGES: usize> CoherenceGraph<MAX_NODES, M
         // Update adjacency matrix and cached weights before removing.
         self.adj_matrix[from_node][to_node] =
             self.adj_matrix[from_node][to_node].saturating_sub(weight);
-        self.cached_outgoing[from_node] =
-            self.cached_outgoing[from_node].saturating_sub(weight);
-        self.cached_incoming[to_node] =
-            self.cached_incoming[to_node].saturating_sub(weight);
+        self.cached_outgoing[from_node] = self.cached_outgoing[from_node].saturating_sub(weight);
+        self.cached_incoming[to_node] = self.cached_incoming[to_node].saturating_sub(weight);
 
         // Repair the linked list: remove this edge from the from-node's list
         if self.nodes[from_node].first_edge == edge_idx {

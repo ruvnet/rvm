@@ -35,21 +35,43 @@ mod tests {
     // ---------------------------------------------------------------
 
     #[test]
-    fn test_full_lifecycle_created_to_running_to_suspended_to_running_to_hibernated_to_created_to_running_to_destroyed() {
+    fn test_full_lifecycle_created_to_running_to_suspended_to_running_to_hibernated_to_created_to_running_to_destroyed(
+    ) {
         // Created -> Running
-        assert!(valid_transition(PartitionState::Created, PartitionState::Running));
+        assert!(valid_transition(
+            PartitionState::Created,
+            PartitionState::Running
+        ));
         // Running -> Suspended
-        assert!(valid_transition(PartitionState::Running, PartitionState::Suspended));
+        assert!(valid_transition(
+            PartitionState::Running,
+            PartitionState::Suspended
+        ));
         // Suspended -> Running
-        assert!(valid_transition(PartitionState::Suspended, PartitionState::Running));
+        assert!(valid_transition(
+            PartitionState::Suspended,
+            PartitionState::Running
+        ));
         // Running -> Hibernated
-        assert!(valid_transition(PartitionState::Running, PartitionState::Hibernated));
+        assert!(valid_transition(
+            PartitionState::Running,
+            PartitionState::Hibernated
+        ));
         // Hibernated -> Created
-        assert!(valid_transition(PartitionState::Hibernated, PartitionState::Created));
+        assert!(valid_transition(
+            PartitionState::Hibernated,
+            PartitionState::Created
+        ));
         // Created -> Running (again)
-        assert!(valid_transition(PartitionState::Created, PartitionState::Running));
+        assert!(valid_transition(
+            PartitionState::Created,
+            PartitionState::Running
+        ));
         // Running -> Destroyed
-        assert!(valid_transition(PartitionState::Running, PartitionState::Destroyed));
+        assert!(valid_transition(
+            PartitionState::Running,
+            PartitionState::Destroyed
+        ));
     }
 
     // ---------------------------------------------------------------
@@ -58,47 +80,74 @@ mod tests {
 
     #[test]
     fn test_created_to_running() {
-        assert!(valid_transition(PartitionState::Created, PartitionState::Running));
+        assert!(valid_transition(
+            PartitionState::Created,
+            PartitionState::Running
+        ));
     }
 
     #[test]
     fn test_created_to_destroyed() {
-        assert!(valid_transition(PartitionState::Created, PartitionState::Destroyed));
+        assert!(valid_transition(
+            PartitionState::Created,
+            PartitionState::Destroyed
+        ));
     }
 
     #[test]
     fn test_running_to_suspended() {
-        assert!(valid_transition(PartitionState::Running, PartitionState::Suspended));
+        assert!(valid_transition(
+            PartitionState::Running,
+            PartitionState::Suspended
+        ));
     }
 
     #[test]
     fn test_running_to_destroyed() {
-        assert!(valid_transition(PartitionState::Running, PartitionState::Destroyed));
+        assert!(valid_transition(
+            PartitionState::Running,
+            PartitionState::Destroyed
+        ));
     }
 
     #[test]
     fn test_running_to_hibernated() {
-        assert!(valid_transition(PartitionState::Running, PartitionState::Hibernated));
+        assert!(valid_transition(
+            PartitionState::Running,
+            PartitionState::Hibernated
+        ));
     }
 
     #[test]
     fn test_suspended_to_running() {
-        assert!(valid_transition(PartitionState::Suspended, PartitionState::Running));
+        assert!(valid_transition(
+            PartitionState::Suspended,
+            PartitionState::Running
+        ));
     }
 
     #[test]
     fn test_suspended_to_destroyed() {
-        assert!(valid_transition(PartitionState::Suspended, PartitionState::Destroyed));
+        assert!(valid_transition(
+            PartitionState::Suspended,
+            PartitionState::Destroyed
+        ));
     }
 
     #[test]
     fn test_suspended_to_hibernated() {
-        assert!(valid_transition(PartitionState::Suspended, PartitionState::Hibernated));
+        assert!(valid_transition(
+            PartitionState::Suspended,
+            PartitionState::Hibernated
+        ));
     }
 
     #[test]
     fn test_hibernated_to_created() {
-        assert!(valid_transition(PartitionState::Hibernated, PartitionState::Created));
+        assert!(valid_transition(
+            PartitionState::Hibernated,
+            PartitionState::Created
+        ));
     }
 
     // ---------------------------------------------------------------
@@ -107,65 +156,113 @@ mod tests {
 
     #[test]
     fn test_created_to_suspended_invalid() {
-        assert!(!valid_transition(PartitionState::Created, PartitionState::Suspended));
+        assert!(!valid_transition(
+            PartitionState::Created,
+            PartitionState::Suspended
+        ));
     }
 
     #[test]
     fn test_created_to_hibernated_invalid() {
-        assert!(!valid_transition(PartitionState::Created, PartitionState::Hibernated));
+        assert!(!valid_transition(
+            PartitionState::Created,
+            PartitionState::Hibernated
+        ));
     }
 
     #[test]
     fn test_created_to_created_invalid() {
-        assert!(!valid_transition(PartitionState::Created, PartitionState::Created));
+        assert!(!valid_transition(
+            PartitionState::Created,
+            PartitionState::Created
+        ));
     }
 
     #[test]
     fn test_running_to_running_invalid() {
-        assert!(!valid_transition(PartitionState::Running, PartitionState::Running));
+        assert!(!valid_transition(
+            PartitionState::Running,
+            PartitionState::Running
+        ));
     }
 
     #[test]
     fn test_running_to_created_invalid() {
-        assert!(!valid_transition(PartitionState::Running, PartitionState::Created));
+        assert!(!valid_transition(
+            PartitionState::Running,
+            PartitionState::Created
+        ));
     }
 
     #[test]
     fn test_suspended_to_suspended_invalid() {
-        assert!(!valid_transition(PartitionState::Suspended, PartitionState::Suspended));
+        assert!(!valid_transition(
+            PartitionState::Suspended,
+            PartitionState::Suspended
+        ));
     }
 
     #[test]
     fn test_suspended_to_created_invalid() {
-        assert!(!valid_transition(PartitionState::Suspended, PartitionState::Created));
+        assert!(!valid_transition(
+            PartitionState::Suspended,
+            PartitionState::Created
+        ));
     }
 
     #[test]
     fn test_destroyed_to_anything_invalid() {
-        assert!(!valid_transition(PartitionState::Destroyed, PartitionState::Created));
-        assert!(!valid_transition(PartitionState::Destroyed, PartitionState::Running));
-        assert!(!valid_transition(PartitionState::Destroyed, PartitionState::Suspended));
-        assert!(!valid_transition(PartitionState::Destroyed, PartitionState::Hibernated));
-        assert!(!valid_transition(PartitionState::Destroyed, PartitionState::Destroyed));
+        assert!(!valid_transition(
+            PartitionState::Destroyed,
+            PartitionState::Created
+        ));
+        assert!(!valid_transition(
+            PartitionState::Destroyed,
+            PartitionState::Running
+        ));
+        assert!(!valid_transition(
+            PartitionState::Destroyed,
+            PartitionState::Suspended
+        ));
+        assert!(!valid_transition(
+            PartitionState::Destroyed,
+            PartitionState::Hibernated
+        ));
+        assert!(!valid_transition(
+            PartitionState::Destroyed,
+            PartitionState::Destroyed
+        ));
     }
 
     #[test]
     fn test_hibernated_to_running_invalid() {
-        assert!(!valid_transition(PartitionState::Hibernated, PartitionState::Running));
+        assert!(!valid_transition(
+            PartitionState::Hibernated,
+            PartitionState::Running
+        ));
     }
 
     #[test]
     fn test_hibernated_to_destroyed_valid() {
-        assert!(valid_transition(PartitionState::Hibernated, PartitionState::Destroyed));
+        assert!(valid_transition(
+            PartitionState::Hibernated,
+            PartitionState::Destroyed
+        ));
     }
 
     #[test]
     fn test_hibernated_to_suspended_invalid() {
-        assert!(!valid_transition(PartitionState::Hibernated, PartitionState::Suspended));
+        assert!(!valid_transition(
+            PartitionState::Hibernated,
+            PartitionState::Suspended
+        ));
     }
 
     #[test]
     fn test_hibernated_to_hibernated_invalid() {
-        assert!(!valid_transition(PartitionState::Hibernated, PartitionState::Hibernated));
+        assert!(!valid_transition(
+            PartitionState::Hibernated,
+            PartitionState::Hibernated
+        ));
     }
 }

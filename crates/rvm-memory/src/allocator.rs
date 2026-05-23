@@ -601,25 +601,25 @@ mod tests {
         // Allocate: 8 pages (order 3), 4 pages (order 2), 2 pages (order 1),
         // 1 page (order 0), 1 page (order 0) = 16 total.
         let mut alloc = SmallAllocator::new(base()).unwrap();
-        let a = alloc.alloc_pages(3).unwrap(); // 8 pages
-        let b = alloc.alloc_pages(2).unwrap(); // 4 pages
-        let c = alloc.alloc_pages(1).unwrap(); // 2 pages
-        let d = alloc.alloc_pages(0).unwrap(); // 1 page
-        let e = alloc.alloc_pages(0).unwrap(); // 1 page
+        let addr_8pg = alloc.alloc_pages(3).unwrap(); // 8 pages
+        let addr_4pg = alloc.alloc_pages(2).unwrap(); // 4 pages
+        let addr_2pg = alloc.alloc_pages(1).unwrap(); // 2 pages
+        let addr_1pg_d = alloc.alloc_pages(0).unwrap(); // 1 page
+        let addr_1pg_e = alloc.alloc_pages(0).unwrap(); // 1 page
         assert_eq!(alloc.free_page_count(), 0);
 
         // Now free in reverse order and verify coalescing.
-        alloc.free_pages(e, 0).unwrap();
-        alloc.free_pages(d, 0).unwrap();
+        alloc.free_pages(addr_1pg_e, 0).unwrap();
+        alloc.free_pages(addr_1pg_d, 0).unwrap();
         assert_eq!(alloc.free_page_count(), 2);
 
-        alloc.free_pages(c, 1).unwrap();
+        alloc.free_pages(addr_2pg, 1).unwrap();
         assert_eq!(alloc.free_page_count(), 4);
 
-        alloc.free_pages(b, 2).unwrap();
+        alloc.free_pages(addr_4pg, 2).unwrap();
         assert_eq!(alloc.free_page_count(), 8);
 
-        alloc.free_pages(a, 3).unwrap();
+        alloc.free_pages(addr_8pg, 3).unwrap();
         assert_eq!(alloc.free_page_count(), 16); // Fully coalesced.
     }
 

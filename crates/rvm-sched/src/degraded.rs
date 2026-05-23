@@ -26,8 +26,14 @@ mod tests {
 
     #[test]
     fn test_degraded_reasons() {
-        assert_ne!(DegradedReason::CoherenceUnavailable, DegradedReason::MinCutBudgetExceeded);
-        assert_ne!(DegradedReason::MinCutBudgetExceeded, DegradedReason::RecoveryTriggered);
+        assert_ne!(
+            DegradedReason::CoherenceUnavailable,
+            DegradedReason::MinCutBudgetExceeded
+        );
+        assert_ne!(
+            DegradedReason::MinCutBudgetExceeded,
+            DegradedReason::RecoveryTriggered
+        );
     }
 
     #[test]

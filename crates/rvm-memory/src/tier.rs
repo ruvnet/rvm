@@ -183,11 +183,7 @@ impl<const MAX_REGIONS: usize> TierManager<MAX_REGIONS> {
     ///
     /// Returns [`RvmError::ResourceLimitExceeded`] if the manager is at capacity.
     /// Returns [`RvmError::MemoryOverlap`] if the region is already registered.
-    pub fn register(
-        &mut self,
-        region_id: OwnedRegionId,
-        initial_tier: Tier,
-    ) -> RvmResult<()> {
+    pub fn register(&mut self, region_id: OwnedRegionId, initial_tier: Tier) -> RvmResult<()> {
         if self.count >= MAX_REGIONS {
             return Err(RvmError::ResourceLimitExceeded);
         }
@@ -239,8 +235,10 @@ impl<const MAX_REGIONS: usize> TierManager<MAX_REGIONS> {
             Some(idx) => {
                 self.regions[idx].last_access_epoch = self.current_epoch;
                 // Boost recency score on access, saturate at 10_000.
-                self.regions[idx].recency_score =
-                    self.regions[idx].recency_score.saturating_add(1_000).min(10_000);
+                self.regions[idx].recency_score = self.regions[idx]
+                    .recency_score
+                    .saturating_add(1_000)
+                    .min(10_000);
                 Ok(())
             }
             None => Err(RvmError::PartitionNotFound),
@@ -252,11 +250,7 @@ impl<const MAX_REGIONS: usize> TierManager<MAX_REGIONS> {
     /// # Errors
     ///
     /// Returns [`RvmError::PartitionNotFound`] if the region is not tracked.
-    pub fn update_cut_value(
-        &mut self,
-        region_id: OwnedRegionId,
-        cut_value: u16,
-    ) -> RvmResult<()> {
+    pub fn update_cut_value(&mut self, region_id: OwnedRegionId, cut_value: u16) -> RvmResult<()> {
         match self.find_slot(region_id) {
             Some(idx) => {
                 self.regions[idx].cut_value = cut_value.min(10_000);
@@ -277,11 +271,7 @@ impl<const MAX_REGIONS: usize> TierManager<MAX_REGIONS> {
     /// higher than the current tier, or if promoting from Cold.
     /// Returns [`RvmError::CoherenceBelowThreshold`] if the residency score
     /// does not meet the promotion threshold.
-    pub fn promote(
-        &mut self,
-        region_id: OwnedRegionId,
-        target_tier: Tier,
-    ) -> RvmResult<Tier> {
+    pub fn promote(&mut self, region_id: OwnedRegionId, target_tier: Tier) -> RvmResult<Tier> {
         let idx = self
             .find_slot(region_id)
             .ok_or(RvmError::PartitionNotFound)?;
@@ -317,11 +307,7 @@ impl<const MAX_REGIONS: usize> TierManager<MAX_REGIONS> {
     /// Returns [`RvmError::PartitionNotFound`] if the region is not tracked.
     /// Returns [`RvmError::InvalidTierTransition`] if the target tier is not
     /// lower than the current tier.
-    pub fn demote(
-        &mut self,
-        region_id: OwnedRegionId,
-        target_tier: Tier,
-    ) -> RvmResult<Tier> {
+    pub fn demote(&mut self, region_id: OwnedRegionId, target_tier: Tier) -> RvmResult<Tier> {
         let idx = self
             .find_slot(region_id)
             .ok_or(RvmError::PartitionNotFound)?;
@@ -360,10 +346,7 @@ impl<const MAX_REGIONS: usize> TierManager<MAX_REGIONS> {
     /// compression for Dormant demotion).
     ///
     /// `out` is a caller-provided buffer; returns the number of entries written.
-    pub fn find_demotion_candidates(
-        &self,
-        out: &mut [(OwnedRegionId, Tier)],
-    ) -> usize {
+    pub fn find_demotion_candidates(&self, out: &mut [(OwnedRegionId, Tier)]) -> usize {
         let mut written = 0;
         for slot in &self.regions {
             if !slot.occupied || written >= out.len() {
@@ -445,7 +428,10 @@ mod tests {
     fn register_duplicate_fails() {
         let mut mgr = TierManager::<8>::new();
         mgr.register(rid(1), Tier::Warm).unwrap();
-        assert_eq!(mgr.register(rid(1), Tier::Hot), Err(RvmError::MemoryOverlap));
+        assert_eq!(
+            mgr.register(rid(1), Tier::Hot),
+            Err(RvmError::MemoryOverlap)
+        );
     }
 
     #[test]
@@ -634,9 +620,15 @@ mod tests {
 
         // Verify each demotion target is correct.
         let candidates: &[(OwnedRegionId, Tier)] = &buf[..n];
-        assert!(candidates.iter().any(|(id, t)| *id == rid(1) && *t == Tier::Warm));
-        assert!(candidates.iter().any(|(id, t)| *id == rid(2) && *t == Tier::Dormant));
-        assert!(candidates.iter().any(|(id, t)| *id == rid(3) && *t == Tier::Cold));
+        assert!(candidates
+            .iter()
+            .any(|(id, t)| *id == rid(1) && *t == Tier::Warm));
+        assert!(candidates
+            .iter()
+            .any(|(id, t)| *id == rid(2) && *t == Tier::Dormant));
+        assert!(candidates
+            .iter()
+            .any(|(id, t)| *id == rid(3) && *t == Tier::Cold));
     }
 
     #[test]

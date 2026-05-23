@@ -123,10 +123,7 @@ impl DefaultCoherenceEngine {
     /// computation.
     #[must_use]
     pub fn with_defaults(max_iterations: u32) -> Self {
-        Self::new(
-            BuiltinMinCut::new(max_iterations),
-            BuiltinCoherence,
-        )
+        Self::new(BuiltinMinCut::new(max_iterations), BuiltinCoherence)
     }
 }
 
@@ -173,13 +170,11 @@ impl<MCB: MinCutBackend, CB: CoherenceBackend> CoherenceEngine<MCB, CB> {
 
     /// Register a new partition in the coherence graph.
     pub fn add_partition(&mut self, id: PartitionId) -> Result<(), RvmError> {
-        self.graph
-            .add_node(id)
-            .map_err(|e| match e {
-                GraphError::DuplicateNode => RvmError::InvalidPartitionState,
-                GraphError::NodeCapacityExhausted => RvmError::ResourceLimitExceeded,
-                _ => RvmError::InternalError,
-            })?;
+        self.graph.add_node(id).map_err(|e| match e {
+            GraphError::DuplicateNode => RvmError::InvalidPartitionState,
+            GraphError::NodeCapacityExhausted => RvmError::ResourceLimitExceeded,
+            _ => RvmError::InternalError,
+        })?;
 
         // Find a free entry slot
         for entry in self.entries.iter_mut() {
@@ -229,7 +224,7 @@ impl<MCB: MinCutBackend, CB: CoherenceBackend> CoherenceEngine<MCB, CB> {
         match self.graph.find_directed_edge(from, to) {
             Some(eidx) => {
                 self.graph
-                    .update_weight(eidx, weight as i64)
+                    .update_weight(eidx, i64::try_from(weight).unwrap_or(i64::MAX))
                     .map_err(|_| RvmError::InternalError)?;
             }
             None => {
@@ -360,9 +355,7 @@ impl<MCB: MinCutBackend, CB: CoherenceBackend> CoherenceEngine<MCB, CB> {
                 if signal.should_merge {
                     match best_merge {
                         None => best_merge = Some(signal),
-                        Some(ref prev)
-                            if signal.mutual_coherence > prev.mutual_coherence =>
-                        {
+                        Some(ref prev) if signal.mutual_coherence > prev.mutual_coherence => {
                             best_merge = Some(signal);
                         }
                         _ => {}
@@ -535,7 +528,10 @@ mod tests {
         let decision = engine.tick(10);
 
         match decision {
-            CoherenceDecision::SplitRecommended { partition, pressure } => {
+            CoherenceDecision::SplitRecommended {
+                partition,
+                pressure,
+            } => {
                 // Either pid(1) or pid(2) should be recommended for split
                 assert!(partition == pid(1) || partition == pid(2));
                 assert!(pressure.as_fixed() > SPLIT_THRESHOLD_BP);
@@ -635,14 +631,8 @@ mod tests {
             engine.do_tick(10);
         }
 
-        assert_eq!(
-            default_engine.score(pid(1)),
-            rv_engine.score(pid(1))
-        );
-        assert_eq!(
-            default_engine.pressure(pid(1)),
-            rv_engine.pressure(pid(1))
-        );
+        assert_eq!(default_engine.score(pid(1)), rv_engine.score(pid(1)));
+        assert_eq!(default_engine.pressure(pid(1)), rv_engine.pressure(pid(1)));
     }
 }
 

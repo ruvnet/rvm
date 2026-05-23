@@ -413,7 +413,9 @@ mod tests {
         let mut engine = ProofEngine::<64>::new();
 
         // First call succeeds.
-        assert!(engine.verify_and_witness(&token, &context, &cap_mgr, &witness_log).is_ok());
+        assert!(engine
+            .verify_and_witness(&token, &context, &cap_mgr, &witness_log)
+            .is_ok());
 
         // Second call with same nonce fails.
         let result = engine.verify_and_witness(&token, &context, &cap_mgr, &witness_log);
@@ -513,7 +515,9 @@ mod tests {
             .build();
 
         let mut engine = ProofEngine::<64>::new();
-        assert!(engine.verify_and_witness(&token, &context, &cap_mgr, &witness_log).is_ok());
+        assert!(engine
+            .verify_and_witness(&token, &context, &cap_mgr, &witness_log)
+            .is_ok());
 
         let record = witness_log.get(0).unwrap();
         assert_eq!(record.action_kind, ActionKind::ProofVerifiedP1 as u8);
@@ -546,7 +550,9 @@ mod tests {
                 .time_window(500, 1000)
                 .nonce(nonce)
                 .build();
-            assert!(engine.verify_and_witness(&token, &context, &cap_mgr, &witness_log).is_ok());
+            assert!(engine
+                .verify_and_witness(&token, &context, &cap_mgr, &witness_log)
+                .is_ok());
         }
         assert_eq!(witness_log.total_emitted(), 5);
     }

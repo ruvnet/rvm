@@ -99,7 +99,7 @@ pub fn configure_hcr_el2() {
         | (1 << 4)             // IMO: route IRQ to EL2
         | (1 << 5)             // AMO: route SError to EL2
         | (1 << 19)            // TSC: trap SMC to EL2
-        | (1 << 31);           // RW: EL1 is AArch64
+        | (1 << 31); // RW: EL1 is AArch64
 
     // SAFETY: Writing HCR_EL2 at EL2 is the standard way to configure the
     // hypervisor. We hold no references to guest state at boot time.
@@ -159,7 +159,7 @@ pub fn configure_vtcr_el2() {
         | (1 << 10)             // ORGN0 = 1: outer write-back
         | (3 << 12)             // SH0 = 3: inner shareable
         | (0 << 14)             // TG0 = 0: 4KB granule
-        | (2 << 16);            // PS = 2: 40-bit PA
+        | (2 << 16); // PS = 2: 40-bit PA
 
     // SAFETY: Writing VTCR_EL2 configures the translation regime for
     // stage-2. Called during boot before any guest is running.

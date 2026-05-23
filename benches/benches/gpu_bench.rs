@@ -7,10 +7,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use rvm_gpu::{
-    GpuBudget, GpuContext, GpuStatus,
     kernel::{KernelId, LaunchConfig},
     queue::{GpuQueue, QueueCommand, QueueId},
-    DEFAULT_KERNEL_TIMEOUT_NS,
+    GpuBudget, GpuContext, GpuStatus, DEFAULT_KERNEL_TIMEOUT_NS,
 };
 use rvm_types::PartitionId;
 
@@ -129,11 +128,8 @@ fn bench_gpu_launch_config_validate(c: &mut Criterion) {
 fn bench_gpu_queue_enqueue(c: &mut Criterion) {
     c.bench_function("gpu_queue_enqueue_barrier", |b| {
         b.iter_custom(|iters| {
-            let mut q = GpuQueue::with_max_depth(
-                QueueId::new(0),
-                PartitionId::new(1),
-                iters as u32 + 1,
-            );
+            let mut q =
+                GpuQueue::with_max_depth(QueueId::new(0), PartitionId::new(1), iters as u32 + 1);
             let cmd = QueueCommand::barrier();
             let start = std::time::Instant::now();
             for _ in 0..iters {
@@ -145,11 +141,8 @@ fn bench_gpu_queue_enqueue(c: &mut Criterion) {
 
     c.bench_function("gpu_queue_enqueue_kernel_launch", |b| {
         b.iter_custom(|iters| {
-            let mut q = GpuQueue::with_max_depth(
-                QueueId::new(0),
-                PartitionId::new(1),
-                iters as u32 + 1,
-            );
+            let mut q =
+                GpuQueue::with_max_depth(QueueId::new(0), PartitionId::new(1), iters as u32 + 1);
             let cmd = QueueCommand::kernel_launch(KernelId::new(1));
             let start = std::time::Instant::now();
             for _ in 0..iters {
@@ -160,11 +153,7 @@ fn bench_gpu_queue_enqueue(c: &mut Criterion) {
     });
 
     c.bench_function("gpu_queue_enqueue_complete_cycle", |b| {
-        let mut q = GpuQueue::with_max_depth(
-            QueueId::new(0),
-            PartitionId::new(1),
-            256,
-        );
+        let mut q = GpuQueue::with_max_depth(QueueId::new(0), PartitionId::new(1), 256);
         let cmd = QueueCommand::barrier();
         b.iter(|| {
             let _ = q.enqueue(&cmd);

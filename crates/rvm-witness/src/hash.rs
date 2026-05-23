@@ -21,7 +21,7 @@ pub use rvm_types::fnv1a_64;
 #[cfg(feature = "crypto-sha256")]
 #[must_use]
 pub fn compute_chain_hash(prev_hash: u64, sequence: u64) -> u64 {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
 
     let mut hasher = Sha256::new();
     hasher.update(prev_hash.to_le_bytes());
@@ -40,7 +40,7 @@ pub fn compute_chain_hash(prev_hash: u64, sequence: u64) -> u64 {
 #[cfg(feature = "crypto-sha256")]
 #[must_use]
 pub fn compute_record_hash(data: &[u8]) -> u64 {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
 
     let mut hasher = Sha256::new();
     hasher.update(data);
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn test_xor_fold_preserves_entropy() {
         // Different inputs must produce different folded outputs.
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let d1 = Sha256::digest(b"alpha");
         let d2 = Sha256::digest(b"bravo");
         let f1 = xor_fold_256_to_u64(d1.as_ref());
@@ -176,6 +176,9 @@ mod tests {
         buf[..8].copy_from_slice(&0u64.to_le_bytes());
         buf[8..16].copy_from_slice(&1u64.to_le_bytes());
         let fnv_h = fnv1a_64(&buf);
-        assert_ne!(sha_h, fnv_h, "SHA-256 path should produce different output than FNV-1a");
+        assert_ne!(
+            sha_h, fnv_h,
+            "SHA-256 path should produce different output than FNV-1a"
+        );
     }
 }

@@ -190,12 +190,7 @@ impl<const N: usize> MinCutBridge<N> {
         }
 
         // Stoer-Wagner-like minimum cut on the local adjacency matrix
-        let result = stoer_wagner_mincut(
-            &adj,
-            sub_count,
-            &sub_nodes,
-            self.max_iterations,
-        );
+        let result = stoer_wagner_mincut(&adj, sub_count, &sub_nodes, self.max_iterations);
 
         match result {
             Ok(cut) => {
@@ -270,8 +265,7 @@ fn stoer_wagner_mincut(
         }
 
         // Minimum cut phase: find the most tightly connected pair
-        let (s, t, cut_of_phase) =
-            minimum_cut_phase(&w, &active, active_count, n);
+        let (s, t, cut_of_phase) = minimum_cut_phase(&w, &active, active_count, n);
 
         if cut_of_phase < best_cut_weight {
             best_cut_weight = cut_of_phase;

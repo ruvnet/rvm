@@ -6,7 +6,7 @@
 //!
 //! The IPA space is 40 bits (1 TB), starting at level 1 (SL0=1 in VTCR_EL2).
 
-use rvm_types::{GuestPhysAddr, PhysAddr, RvmResult, RvmError};
+use rvm_types::{GuestPhysAddr, PhysAddr, RvmError, RvmResult};
 
 /// Page size: 4 KB.
 pub const PAGE_SIZE: usize = 4096;
@@ -167,8 +167,7 @@ impl Stage2PageTable {
     ///
     /// Propagates errors from [`map_2mb_block`].
     pub fn map_device_2mb(&mut self, ipa: u64, pa: u64) -> RvmResult<()> {
-        let attrs =
-            s2_desc::MEM_ATTR_DEVICE | s2_desc::SH_OUTER | s2_desc::S2AP_RW | s2_desc::XN;
+        let attrs = s2_desc::MEM_ATTR_DEVICE | s2_desc::SH_OUTER | s2_desc::S2AP_RW | s2_desc::XN;
         self.map_2mb_block(ipa, pa, attrs)
     }
 
@@ -418,10 +417,7 @@ mod tests {
     #[test]
     fn test_stage2_alignment() {
         // Verify that Stage2PageTable is 4096-byte aligned.
-        assert_eq!(
-            core::mem::align_of::<Stage2PageTable>(),
-            4096,
-        );
+        assert_eq!(core::mem::align_of::<Stage2PageTable>(), 4096,);
     }
 
     #[test]

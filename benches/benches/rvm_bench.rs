@@ -16,15 +16,14 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use rvm_types::{
-    ActionKind, CapRights, CapToken, CapType, CutPressure,
-    PartitionId, PhysAddr, WitnessRecord,
+    ActionKind, CapRights, CapToken, CapType, CutPressure, PartitionId, PhysAddr, WitnessRecord,
 };
 
 use rvm_gpu::{
     budget::GpuBudget,
     context::GpuContext,
     kernel::{KernelId, LaunchConfig},
-    queue::{GpuQueue, QueueId, QueueCommand},
+    queue::{GpuQueue, QueueCommand, QueueId},
 };
 
 // ---------------------------------------------------------------------------
@@ -76,7 +75,8 @@ fn bench_p1_verify(c: &mut Criterion) {
             .unwrap();
 
         b.iter(|| {
-            black_box(cap_mgr.verify_p1(idx, gen, CapRights::READ).unwrap());
+            cap_mgr.verify_p1(idx, gen, CapRights::READ).unwrap();
+            black_box(());
         });
     });
 
@@ -96,7 +96,8 @@ fn bench_p1_verify(c: &mut Criterion) {
 
         b.iter(|| {
             for _ in 0..10_000 {
-                black_box(cap_mgr.verify_p1(idx, gen, CapRights::READ).unwrap());
+                cap_mgr.verify_p1(idx, gen, CapRights::READ).unwrap();
+                black_box(());
             }
         });
     });
@@ -147,11 +148,10 @@ fn bench_p2_verify(c: &mut Criterion) {
 
             let witness_log = rvm_witness::WitnessLog::<256>::new();
             let mut engine = ProofEngine::<256>::new();
-            black_box(
-                engine
-                    .verify_and_witness(&token, &context, &cap_mgr, &witness_log)
-                    .unwrap(),
-            );
+            engine
+                .verify_and_witness(&token, &context, &cap_mgr, &witness_log)
+                .unwrap();
+            black_box(());
         });
     });
 }
@@ -201,7 +201,9 @@ fn bench_partition_switch(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 fn bench_coherence_score(c: &mut Criterion) {
     use rvm_coherence::graph::CoherenceGraph;
-    use rvm_coherence::scoring::{compute_coherence_score, recompute_all_scores, PartitionCoherenceResult};
+    use rvm_coherence::scoring::{
+        compute_coherence_score, recompute_all_scores, PartitionCoherenceResult,
+    };
 
     c.bench_function("coherence_score_single_16node", |b| {
         let mut graph = CoherenceGraph::<16, 128>::new();
@@ -314,8 +316,7 @@ fn bench_buddy_alloc(c: &mut Criterion) {
 
     c.bench_function("buddy_alloc_order0_256", |b| {
         b.iter(|| {
-            let mut alloc =
-                BuddyAllocator::<256, 16>::new(PhysAddr::new(0x1000_0000)).unwrap();
+            let mut alloc = BuddyAllocator::<256, 16>::new(PhysAddr::new(0x1000_0000)).unwrap();
             for _ in 0..256 {
                 let addr = alloc.alloc_pages(0).unwrap();
                 black_box(addr);
@@ -325,8 +326,7 @@ fn bench_buddy_alloc(c: &mut Criterion) {
 
     c.bench_function("buddy_alloc_free_cycle_1000", |b| {
         b.iter(|| {
-            let mut alloc =
-                BuddyAllocator::<256, 16>::new(PhysAddr::new(0x1000_0000)).unwrap();
+            let mut alloc = BuddyAllocator::<256, 16>::new(PhysAddr::new(0x1000_0000)).unwrap();
             for _ in 0..1000 {
                 let addr = alloc.alloc_pages(0).unwrap();
                 alloc.free_pages(addr, 0).unwrap();
@@ -337,8 +337,7 @@ fn bench_buddy_alloc(c: &mut Criterion) {
 
     c.bench_function("buddy_alloc_mixed_orders", |b| {
         b.iter(|| {
-            let mut alloc =
-                BuddyAllocator::<256, 16>::new(PhysAddr::new(0x1000_0000)).unwrap();
+            let mut alloc = BuddyAllocator::<256, 16>::new(PhysAddr::new(0x1000_0000)).unwrap();
             // Allocate a mix of orders.
             let a0 = alloc.alloc_pages(0).unwrap();
             let a1 = alloc.alloc_pages(1).unwrap();
@@ -388,18 +387,13 @@ fn bench_fnv1a_hash(c: &mut Criterion) {
 // Bonus: Security gate throughput
 // ---------------------------------------------------------------------------
 fn bench_security_gate(c: &mut Criterion) {
-    use rvm_security::{SecurityGate, GateRequest};
+    use rvm_security::{GateRequest, SecurityGate};
     use rvm_types::WitnessHash;
 
     c.bench_function("security_gate_check_p1", |b| {
         let log = rvm_witness::WitnessLog::<4096>::new();
         let gate = SecurityGate::new(&log);
-        let token = CapToken::new(
-            1,
-            CapType::Partition,
-            CapRights::READ | CapRights::WRITE,
-            0,
-        );
+        let token = CapToken::new(1, CapType::Partition, CapRights::READ | CapRights::WRITE, 0);
 
         b.iter(|| {
             let request = GateRequest {
@@ -421,12 +415,7 @@ fn bench_security_gate(c: &mut Criterion) {
     c.bench_function("security_gate_check_p2", |b| {
         let log = rvm_witness::WitnessLog::<4096>::new();
         let gate = SecurityGate::new(&log);
-        let token = CapToken::new(
-            1,
-            CapType::Region,
-            CapRights::READ | CapRights::WRITE,
-            0,
-        );
+        let token = CapToken::new(1, CapType::Region, CapRights::READ | CapRights::WRITE, 0);
         let commitment = WitnessHash::from_bytes([0xAB; 32]);
 
         b.iter(|| {
@@ -462,8 +451,8 @@ fn bench_witness_verify_chain(c: &mut Criterion) {
         }
 
         let mut records = [WitnessRecord::zeroed(); 64];
-        for i in 0..64 {
-            records[i] = log.get(i).unwrap();
+        for (i, rec) in records.iter_mut().enumerate() {
+            *rec = log.get(i).unwrap();
         }
 
         b.iter(|| {
@@ -515,10 +504,10 @@ fn bench_gpu_budget_check_record(c: &mut Criterion) {
     c.bench_function("gpu_budget_check_record_1000", |b| {
         b.iter(|| {
             let mut budget = GpuBudget::new(
-                u64::MAX / 2,       // large compute budget
-                u64::MAX / 2,       // large memory budget
-                u64::MAX / 2,       // large transfer budget
-                u32::MAX / 2,       // large launch budget
+                u64::MAX / 2, // large compute budget
+                u64::MAX / 2, // large memory budget
+                u64::MAX / 2, // large transfer budget
+                u32::MAX / 2, // large launch budget
             );
             for _ in 0..1000 {
                 budget.check_compute(100).unwrap();
@@ -561,7 +550,8 @@ fn bench_gpu_launch_config_validate(c: &mut Criterion) {
                     shared_memory_bytes: 16384,
                     timeout_ns: 100_000_000,
                 };
-                black_box(config.validate().unwrap());
+                config.validate().unwrap();
+                black_box(());
             }
         });
     });
@@ -574,11 +564,7 @@ fn bench_gpu_launch_config_validate(c: &mut Criterion) {
 fn bench_gpu_queue_enqueue(c: &mut Criterion) {
     c.bench_function("gpu_queue_enqueue_1000", |b| {
         b.iter(|| {
-            let mut queue = GpuQueue::with_max_depth(
-                QueueId::new(0),
-                PartitionId::new(1),
-                1024,
-            );
+            let mut queue = GpuQueue::with_max_depth(QueueId::new(0), PartitionId::new(1), 1024);
             let cmd = QueueCommand::kernel_launch(KernelId::new(0));
             for _ in 0..1000 {
                 queue.enqueue(&cmd).unwrap();

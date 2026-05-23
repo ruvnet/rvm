@@ -119,11 +119,7 @@ impl MigrationTracker {
         let elapsed = current_ns.saturating_sub(self.start_ns);
         if elapsed > self.plan.deadline_ns {
             self.state = MigrationState::Aborted;
-            emit_migration_witness(
-                witness_log,
-                ActionKind::MigrationTimeout,
-                &self.plan,
-            );
+            emit_migration_witness(witness_log, ActionKind::MigrationTimeout, &self.plan);
             return Err(RvmError::MigrationTimeout);
         }
 
@@ -131,11 +127,7 @@ impl MigrationTracker {
             Some(next_state) => {
                 self.state = next_state;
                 if next_state == MigrationState::Complete {
-                    emit_migration_witness(
-                        witness_log,
-                        ActionKind::PartitionMigrate,
-                        &self.plan,
-                    );
+                    emit_migration_witness(witness_log, ActionKind::PartitionMigrate, &self.plan);
                 }
                 Ok(next_state)
             }
@@ -147,11 +139,7 @@ impl MigrationTracker {
     pub fn abort<const W: usize>(&mut self, witness_log: &WitnessLog<W>) {
         if !self.state.is_terminal() {
             self.state = MigrationState::Aborted;
-            emit_migration_witness(
-                witness_log,
-                ActionKind::MigrationTimeout,
-                &self.plan,
-            );
+            emit_migration_witness(witness_log, ActionKind::MigrationTimeout, &self.plan);
         }
     }
 
@@ -254,7 +242,10 @@ mod tests {
         assert!(tracker.is_aborted());
 
         // Cannot advance after abort.
-        assert_eq!(tracker.advance(1, &log), Err(RvmError::InvalidPartitionState));
+        assert_eq!(
+            tracker.advance(1, &log),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
@@ -268,7 +259,10 @@ mod tests {
         }
         assert!(tracker.is_complete());
 
-        assert_eq!(tracker.advance(100_000, &log), Err(RvmError::InvalidPartitionState));
+        assert_eq!(
+            tracker.advance(100_000, &log),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
@@ -301,7 +295,10 @@ mod tests {
 
     #[test]
     fn test_migration_state_next() {
-        assert_eq!(MigrationState::Serializing.next(), Some(MigrationState::PausingComms));
+        assert_eq!(
+            MigrationState::Serializing.next(),
+            Some(MigrationState::PausingComms)
+        );
         assert_eq!(MigrationState::Complete.next(), None);
         assert_eq!(MigrationState::Aborted.next(), None);
     }

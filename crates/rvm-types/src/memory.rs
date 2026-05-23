@@ -1,6 +1,6 @@
 //! Memory region types.
 
-use crate::{GuestPhysAddr, PhysAddr, PartitionId};
+use crate::{GuestPhysAddr, PartitionId, PhysAddr};
 
 /// Unique identifier for an owned memory region.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

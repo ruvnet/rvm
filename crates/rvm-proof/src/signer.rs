@@ -404,11 +404,7 @@ pub fn derive_witness_key(measurement: &[u8; 32], partition_id: u32) -> [u8; 32]
 pub fn derive_key_bundle(measurement: &[u8; 32], partition_id: u32) -> KeyBundle {
     KeyBundle {
         witness_key: derive_key_with_tag(measurement, partition_id, b"rvm-witness-key-v1"),
-        attestation_key: derive_key_with_tag(
-            measurement,
-            partition_id,
-            b"rvm-attestation-key-v1",
-        ),
+        attestation_key: derive_key_with_tag(measurement, partition_id, b"rvm-attestation-key-v1"),
         ipc_key: derive_key_with_tag(measurement, partition_id, b"rvm-ipc-key-v1"),
     }
 }
@@ -479,7 +475,10 @@ mod tests {
             let digest = [0xBBu8; 32];
             let mut sig = signer.sign(&digest);
             sig[0] ^= 0xFF; // Flip bits in the first byte.
-            assert_eq!(signer.verify(&digest, &sig), Err(SignatureError::BadSignature));
+            assert_eq!(
+                signer.verify(&digest, &sig),
+                Err(SignatureError::BadSignature)
+            );
         }
 
         #[test]
@@ -488,7 +487,10 @@ mod tests {
             let digest_a = [0xAAu8; 32];
             let digest_b = [0xBBu8; 32];
             let sig = signer.sign(&digest_a);
-            assert_eq!(signer.verify(&digest_b, &sig), Err(SignatureError::BadSignature));
+            assert_eq!(
+                signer.verify(&digest_b, &sig),
+                Err(SignatureError::BadSignature)
+            );
         }
 
         #[test]
@@ -497,7 +499,10 @@ mod tests {
             let signer_b = HmacSha256WitnessSigner::new([0x22u8; 32]);
             let digest = [0xCCu8; 32];
             let sig = signer_a.sign(&digest);
-            assert_eq!(signer_b.verify(&digest, &sig), Err(SignatureError::BadSignature));
+            assert_eq!(
+                signer_b.verify(&digest, &sig),
+                Err(SignatureError::BadSignature)
+            );
         }
 
         #[test]
@@ -694,8 +699,7 @@ mod tests {
         fn from_seed_and_new_produce_same_results() {
             let seed = test_seed();
             let from_seed = Ed25519WitnessSigner::from_seed(seed);
-            let from_new =
-                Ed25519WitnessSigner::new(seed, *from_seed.public_key());
+            let from_new = Ed25519WitnessSigner::new(seed, *from_seed.public_key());
             let digest = [0xFFu8; 32];
             assert_eq!(from_seed.sign(&digest), from_new.sign(&digest));
             assert_eq!(from_seed.signer_id(), from_new.signer_id());
@@ -859,7 +863,7 @@ mod tests {
 
     #[test]
     fn null_signer_default() {
-        let signer = NullSigner::default();
+        let signer = NullSigner;
         assert_eq!(signer.sign(&[0u8; 32]), [0u8; 64]);
     }
 

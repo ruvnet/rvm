@@ -6,18 +6,17 @@
 //! own budget, context, queue, and kernel types.
 
 use rvm_gpu::{
-    GpuBudget, GpuContext, GpuMinCutConfig, GpuStatus,
+    buffer::BufferId,
+    device::GpuDeviceInfo,
     error::GpuError,
     kernel::KernelId,
     queue::{GpuQueue, QueueCommand, QueueId},
-    buffer::BufferId,
-    device::GpuDeviceInfo,
-};
-use rvm_types::{
-    DeviceClass, DeviceLease, DeviceLeaseId, GpuMemoryType, GpuQueuePriority,
-    PartitionId, RvmError,
+    GpuBudget, GpuContext, GpuMinCutConfig, GpuStatus,
 };
 use rvm_security::{DmaBudget, ResourceQuota};
+use rvm_types::{
+    DeviceClass, DeviceLease, DeviceLeaseId, GpuMemoryType, GpuQueuePriority, PartitionId, RvmError,
+};
 
 // =========================================================================
 // GpuMemoryType and GpuQueuePriority from rvm-types
@@ -63,9 +62,11 @@ fn device_class_graphics_for_gpu() {
     assert_eq!(lease.class, DeviceClass::Graphics);
 
     // A GpuDeviceInfo should use the same MMIO region concept.
-    let mut gpu_info = GpuDeviceInfo::default();
-    gpu_info.mmio_base = lease.mmio_base;
-    gpu_info.mmio_size = lease.mmio_size;
+    let gpu_info = GpuDeviceInfo {
+        mmio_base: lease.mmio_base,
+        mmio_size: lease.mmio_size,
+        ..GpuDeviceInfo::default()
+    };
     assert_eq!(gpu_info.mmio_base, 0xFE00_0000);
     assert_eq!(gpu_info.mmio_size, 0x100_0000);
 }
@@ -253,12 +254,14 @@ fn gpu_queue_mixed_commands() {
     let mut q = GpuQueue::with_max_depth(QueueId::new(0), pid, 8);
 
     // Mix of command types.
-    q.enqueue(&QueueCommand::kernel_launch(KernelId::new(1))).unwrap();
+    q.enqueue(&QueueCommand::kernel_launch(KernelId::new(1)))
+        .unwrap();
     q.enqueue(&QueueCommand::buffer_copy(
         BufferId::new(0),
         BufferId::new(1),
         4096,
-    )).unwrap();
+    ))
+    .unwrap();
     q.enqueue(&QueueCommand::barrier()).unwrap();
 
     assert_eq!(q.pending(), 3);

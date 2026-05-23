@@ -224,6 +224,11 @@ impl GpuQuota {
     }
 
     /// Check if a compute operation fits within budget and record it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the compute budget
+    /// would be exceeded.
     pub fn check_compute(&mut self, ns: u64) -> RvmResult<()> {
         let new_total = self
             .compute_ns_used
@@ -237,6 +242,11 @@ impl GpuQuota {
     }
 
     /// Check if a memory allocation fits within budget and record it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the memory budget
+    /// would be exceeded.
     pub fn check_memory(&mut self, bytes: u64) -> RvmResult<()> {
         let new_total = self
             .memory_used
@@ -250,6 +260,11 @@ impl GpuQuota {
     }
 
     /// Check if a transfer fits within budget and record it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the transfer budget
+    /// would be exceeded.
     pub fn check_transfer(&mut self, bytes: u64) -> RvmResult<()> {
         if bytes == 0 {
             return Ok(());
@@ -266,6 +281,11 @@ impl GpuQuota {
     }
 
     /// Check if a kernel launch fits within budget and record it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the kernel launch
+    /// budget would be exceeded.
     pub fn check_launch(&mut self) -> RvmResult<()> {
         if self.kernel_launches_used >= self.kernel_launches_max {
             return Err(RvmError::ResourceLimitExceeded);
@@ -275,11 +295,21 @@ impl GpuQuota {
     }
 
     /// Record a transfer without a separate check (atomic check-and-record).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the transfer budget
+    /// would be exceeded.
     pub fn record_transfer(&mut self, bytes: u64) -> RvmResult<()> {
         self.check_transfer(bytes)
     }
 
     /// Record a kernel launch without a separate check (atomic check-and-record).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the kernel launch
+    /// budget would be exceeded.
     pub fn record_launch(&mut self) -> RvmResult<()> {
         self.check_launch()
     }
@@ -318,10 +348,7 @@ mod tests {
     fn test_dma_budget_denies_over_limit() {
         let mut budget = DmaBudget::new(1000);
         budget.check_dma(500).unwrap();
-        assert_eq!(
-            budget.check_dma(501),
-            Err(RvmError::ResourceLimitExceeded)
-        );
+        assert_eq!(budget.check_dma(501), Err(RvmError::ResourceLimitExceeded));
     }
 
     #[test]
@@ -345,10 +372,7 @@ mod tests {
     fn test_dma_budget_overflow() {
         let mut budget = DmaBudget::new(u64::MAX);
         budget.check_dma(u64::MAX - 1).unwrap();
-        assert_eq!(
-            budget.check_dma(2),
-            Err(RvmError::ResourceLimitExceeded)
-        );
+        assert_eq!(budget.check_dma(2), Err(RvmError::ResourceLimitExceeded));
     }
 
     // --- Resource Quota tests ---
@@ -395,10 +419,7 @@ mod tests {
         let mut quota = ResourceQuota::new(0, 0, 0, 1000);
         assert!(quota.dma.check_dma(500).is_ok());
         assert!(quota.dma.check_dma(500).is_ok());
-        assert_eq!(
-            quota.dma.check_dma(1),
-            Err(RvmError::ResourceLimitExceeded)
-        );
+        assert_eq!(quota.dma.check_dma(1), Err(RvmError::ResourceLimitExceeded));
     }
 
     #[test]
@@ -415,10 +436,7 @@ mod tests {
             Err(RvmError::ResourceLimitExceeded)
         );
         assert_eq!(quota.check_ipc(), Err(RvmError::ResourceLimitExceeded));
-        assert_eq!(
-            quota.dma.check_dma(1),
-            Err(RvmError::ResourceLimitExceeded)
-        );
+        assert_eq!(quota.dma.check_dma(1), Err(RvmError::ResourceLimitExceeded));
 
         // Reset epoch — CPU, IPC, DMA should be available again
         quota.reset_epoch();

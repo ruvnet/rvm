@@ -60,11 +60,7 @@ impl SoftwareTeeProvider {
     /// * `measurement` -- Simulated enclave measurement (MRENCLAVE, MRTD, etc.).
     /// * `signer_key` -- 32-byte key used for HMAC quote signing.
     #[must_use]
-    pub const fn new(
-        platform: TeePlatform,
-        measurement: [u8; 32],
-        signer_key: [u8; 32],
-    ) -> Self {
+    pub const fn new(platform: TeePlatform, measurement: [u8; 32], signer_key: [u8; 32]) -> Self {
         Self {
             platform,
             measurement,
@@ -89,7 +85,7 @@ impl SoftwareTeeProvider {
         }
     }
 
-    /// Compute HMAC-SHA256 over the quote body (magic || platform || measurement || report_data).
+    /// Compute HMAC-SHA256 over the quote body (magic || platform || measurement || `report_data`).
     fn compute_quote_hmac(&self, body: &[u8]) -> [u8; 32] {
         let mut mac = <HmacSha256 as Mac>::new_from_slice(&self.signer_key)
             .expect("HMAC key length is 32 bytes");
@@ -113,12 +109,10 @@ impl TeeQuoteProvider for SoftwareTeeProvider {
         quote[OFFSET_PLATFORM] = Self::platform_byte(self.platform);
 
         // Measurement
-        quote[OFFSET_MEASUREMENT..OFFSET_MEASUREMENT + 32]
-            .copy_from_slice(&self.measurement);
+        quote[OFFSET_MEASUREMENT..OFFSET_MEASUREMENT + 32].copy_from_slice(&self.measurement);
 
         // Report data
-        quote[OFFSET_REPORT_DATA..OFFSET_REPORT_DATA + 64]
-            .copy_from_slice(report_data);
+        quote[OFFSET_REPORT_DATA..OFFSET_REPORT_DATA + 64].copy_from_slice(report_data);
 
         // HMAC over (magic || platform || measurement || report_data)
         let hmac_tag = self.compute_quote_hmac(&quote[..OFFSET_HMAC]);
@@ -158,11 +152,7 @@ mod tests {
         use super::*;
 
         fn test_provider() -> SoftwareTeeProvider {
-            SoftwareTeeProvider::new(
-                TeePlatform::Sgx,
-                [0xAA; 32],
-                [0xBB; 32],
-            )
+            SoftwareTeeProvider::new(TeePlatform::Sgx, [0xAA; 32], [0xBB; 32])
         }
 
         #[test]
@@ -187,11 +177,7 @@ mod tests {
         #[test]
         fn quote_contains_measurement() {
             let measurement = [0xCC; 32];
-            let provider = SoftwareTeeProvider::new(
-                TeePlatform::SevSnp,
-                measurement,
-                [0xDD; 32],
-            );
+            let provider = SoftwareTeeProvider::new(TeePlatform::SevSnp, measurement, [0xDD; 32]);
             let quote = provider.generate_quote(&[0; 64]).unwrap();
             assert_eq!(&quote[5..37], &measurement);
         }
@@ -233,11 +219,7 @@ mod tests {
             let provider = test_provider();
             assert_eq!(provider.platform(), TeePlatform::Sgx);
 
-            let arm = SoftwareTeeProvider::new(
-                TeePlatform::ArmCca,
-                [0; 32],
-                [0; 32],
-            );
+            let arm = SoftwareTeeProvider::new(TeePlatform::ArmCca, [0; 32], [0; 32]);
             assert_eq!(arm.platform(), TeePlatform::ArmCca);
         }
 
@@ -251,16 +233,8 @@ mod tests {
 
         #[test]
         fn different_keys_produce_different_hmacs() {
-            let p1 = SoftwareTeeProvider::new(
-                TeePlatform::Sgx,
-                [0xAA; 32],
-                [0x11; 32],
-            );
-            let p2 = SoftwareTeeProvider::new(
-                TeePlatform::Sgx,
-                [0xAA; 32],
-                [0x22; 32],
-            );
+            let p1 = SoftwareTeeProvider::new(TeePlatform::Sgx, [0xAA; 32], [0x11; 32]);
+            let p2 = SoftwareTeeProvider::new(TeePlatform::Sgx, [0xAA; 32], [0x22; 32]);
             let rd = [0; 64];
             let q1 = p1.generate_quote(&rd).unwrap();
             let q2 = p2.generate_quote(&rd).unwrap();

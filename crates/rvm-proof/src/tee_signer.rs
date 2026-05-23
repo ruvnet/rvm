@@ -146,8 +146,8 @@ mod tests {
         use crate::signer::{HmacSha256WitnessSigner, SignatureError, WitnessSigner};
         use crate::tee::{TeePlatform, TeeQuoteProvider, TeeQuoteVerifier};
         use crate::tee_provider::SoftwareTeeProvider;
-        use crate::tee_verifier::SoftwareTeeVerifier;
         use crate::tee_signer::TeeWitnessSigner;
+        use crate::tee_verifier::SoftwareTeeVerifier;
 
         fn make_signer() -> TeeWitnessSigner<SoftwareTeeProvider, SoftwareTeeVerifier> {
             let tee_key = [0xBB; 32];
@@ -240,22 +240,12 @@ mod tests {
             let m1 = [0x11; 32];
             let p1 = SoftwareTeeProvider::new(TeePlatform::Sgx, m1, tee_key);
             let v1 = SoftwareTeeVerifier::new(tee_key, 0, 0);
-            let s1 = TeeWitnessSigner::new(
-                p1,
-                v1,
-                HmacSha256WitnessSigner::new(hmac_key),
-                m1,
-            );
+            let s1 = TeeWitnessSigner::new(p1, v1, HmacSha256WitnessSigner::new(hmac_key), m1);
 
             let m2 = [0x22; 32];
             let p2 = SoftwareTeeProvider::new(TeePlatform::Sgx, m2, tee_key);
             let v2 = SoftwareTeeVerifier::new(tee_key, 0, 0);
-            let s2 = TeeWitnessSigner::new(
-                p2,
-                v2,
-                HmacSha256WitnessSigner::new(hmac_key),
-                m2,
-            );
+            let s2 = TeeWitnessSigner::new(p2, v2, HmacSha256WitnessSigner::new(hmac_key), m2);
 
             assert_ne!(s1.signer_id(), s2.signer_id());
         }
@@ -268,19 +258,11 @@ mod tests {
             let provider_measurement = [0xAA; 32];
             let signer_measurement = [0xFF; 32]; // Mismatch!
             let hmac_key = [0xCC; 32];
-            let provider = SoftwareTeeProvider::new(
-                TeePlatform::Sgx,
-                provider_measurement,
-                tee_key,
-            );
+            let provider =
+                SoftwareTeeProvider::new(TeePlatform::Sgx, provider_measurement, tee_key);
             let verifier = SoftwareTeeVerifier::new(tee_key, 0, 0);
             let hmac_signer = HmacSha256WitnessSigner::new(hmac_key);
-            let signer = TeeWitnessSigner::new(
-                provider,
-                verifier,
-                hmac_signer,
-                signer_measurement,
-            );
+            let signer = TeeWitnessSigner::new(provider, verifier, hmac_signer, signer_measurement);
 
             let digest = [0x55; 32];
             let sig = signer.sign(&digest);
@@ -295,12 +277,7 @@ mod tests {
             let provider = SoftwareTeeProvider::new(TeePlatform::Sgx, measurement, tee_key);
             let verifier = SoftwareTeeVerifier::new(tee_key, 10, 20); // Expired.
             let hmac_signer = HmacSha256WitnessSigner::new(hmac_key);
-            let signer = TeeWitnessSigner::new(
-                provider,
-                verifier,
-                hmac_signer,
-                measurement,
-            );
+            let signer = TeeWitnessSigner::new(provider, verifier, hmac_signer, measurement);
 
             let digest = [0x66; 32];
             let sig = signer.sign(&digest);

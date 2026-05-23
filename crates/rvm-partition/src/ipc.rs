@@ -52,7 +52,7 @@ impl<const CAPACITY: usize> MessageQueue<CAPACITY> {
     /// Const assertion: CAPACITY must be a power of two and non-zero.
     /// This enables efficient `& (CAPACITY - 1)` index wrapping.
     const _CAPACITY_IS_POWER_OF_TWO: () = assert!(
-        CAPACITY > 0 && (CAPACITY & (CAPACITY - 1)) == 0,
+        CAPACITY > 0 && CAPACITY.is_power_of_two(),
         "MessageQueue CAPACITY must be a non-zero power of two"
     );
 
@@ -60,7 +60,7 @@ impl<const CAPACITY: usize> MessageQueue<CAPACITY> {
     #[must_use]
     pub fn new() -> Self {
         // Ensure the const assertion is evaluated.
-        let _ = Self::_CAPACITY_IS_POWER_OF_TWO;
+        () = Self::_CAPACITY_IS_POWER_OF_TWO;
         Self {
             buffer: [EMPTY_MSG; CAPACITY],
             head: 0,
@@ -179,11 +179,7 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
     /// # Errors
     ///
     /// Returns [`RvmError::ResourceLimitExceeded`] if no channel slots are available.
-    pub fn create_channel(
-        &mut self,
-        from: PartitionId,
-        to: PartitionId,
-    ) -> RvmResult<CommEdgeId> {
+    pub fn create_channel(&mut self, from: PartitionId, to: PartitionId) -> RvmResult<CommEdgeId> {
         if self.edge_count >= MAX_EDGES {
             return Err(RvmError::ResourceLimitExceeded);
         }
@@ -201,7 +197,7 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
                 });
                 self.edge_count += 1;
                 // Populate the hash index for O(1) lookup.
-                let hash_slot = (edge_id.as_u64() as usize) % MAX_EDGES;
+                let hash_slot = usize::try_from(edge_id.as_u64() % MAX_EDGES as u64).unwrap_or(0);
                 self.edge_index[hash_slot] = Some(i);
                 return Ok(edge_id);
             }
@@ -252,6 +248,11 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
     /// The caller **must** have already validated the sender identity.
     /// This method exists to preserve backwards compatibility for internal
     /// callers that have already performed authorization checks.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::PartitionNotFound`] if the edge does not exist.
+    /// Returns [`RvmError::ResourceLimitExceeded`] if the queue is full.
     pub fn send_unchecked(&mut self, edge_id: CommEdgeId, msg: IpcMessage) -> RvmResult<()> {
         let channel = self.find_mut(edge_id)?;
         channel.queue.send(msg)?;
@@ -276,14 +277,12 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
     /// Returns [`RvmError::PartitionNotFound`] if the edge does not exist.
     pub fn destroy_channel(&mut self, edge_id: CommEdgeId) -> RvmResult<()> {
         for (i, slot) in self.queues.iter_mut().enumerate() {
-            let matches = slot
-                .as_ref()
-                .is_some_and(|ch| ch.edge_id == edge_id);
+            let matches = slot.as_ref().is_some_and(|ch| ch.edge_id == edge_id);
             if matches {
                 *slot = None;
                 self.edge_count -= 1;
                 // Clear the hash index entry.
-                let hash_slot = (edge_id.as_u64() as usize) % MAX_EDGES;
+                let hash_slot = usize::try_from(edge_id.as_u64() % MAX_EDGES as u64).unwrap_or(0);
                 if self.edge_index[hash_slot] == Some(i) {
                     self.edge_index[hash_slot] = None;
                 }
@@ -314,7 +313,7 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
     #[inline]
     fn find(&self, edge_id: CommEdgeId) -> RvmResult<&ChannelMeta<QUEUE_SIZE>> {
         // O(1) fast path via hash index.
-        let hash_slot = (edge_id.as_u64() as usize) % MAX_EDGES;
+        let hash_slot = usize::try_from(edge_id.as_u64() % MAX_EDGES as u64).unwrap_or(0);
         if let Some(idx) = self.edge_index[hash_slot] {
             if let Some(ref ch) = self.queues[idx] {
                 if ch.edge_id == edge_id {
@@ -334,7 +333,7 @@ impl<const MAX_EDGES: usize, const QUEUE_SIZE: usize> IpcManager<MAX_EDGES, QUEU
     #[inline]
     fn find_mut(&mut self, edge_id: CommEdgeId) -> RvmResult<&mut ChannelMeta<QUEUE_SIZE>> {
         // O(1) fast path via hash index.
-        let hash_slot = (edge_id.as_u64() as usize) % MAX_EDGES;
+        let hash_slot = usize::try_from(edge_id.as_u64() % MAX_EDGES as u64).unwrap_or(0);
         if let Some(idx) = self.edge_index[hash_slot] {
             if self.queues[idx]
                 .as_ref()

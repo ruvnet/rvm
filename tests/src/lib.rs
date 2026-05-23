@@ -5,8 +5,8 @@
 #[cfg(test)]
 mod tests {
     use rvm_types::{
-        CapRights, CapToken, CapType, CoherenceScore, GuestPhysAddr,
-        PartitionId, PhysAddr, WitnessHash, WitnessRecord, ActionKind,
+        ActionKind, CapRights, CapToken, CapType, CoherenceScore, GuestPhysAddr, PartitionId,
+        PhysAddr, WitnessHash, WitnessRecord,
     };
 
     #[test]
@@ -49,12 +49,7 @@ mod tests {
 
     #[test]
     fn capability_rights_check() {
-        let token = CapToken::new(
-            1,
-            CapType::Partition,
-            CapRights::READ,
-            0,
-        );
+        let token = CapToken::new(1, CapType::Partition, CapRights::READ, 0);
         assert!(token.has_rights(CapRights::READ));
         assert!(!token.has_rights(CapRights::WRITE));
     }
@@ -90,13 +85,27 @@ mod tests {
         let mut tracker = rvm_boot::BootTracker::new();
         assert!(!tracker.is_complete());
 
-        tracker.complete_phase(rvm_boot::BootPhase::HalInit).unwrap();
-        tracker.complete_phase(rvm_boot::BootPhase::MemoryInit).unwrap();
-        tracker.complete_phase(rvm_boot::BootPhase::CapabilityInit).unwrap();
-        tracker.complete_phase(rvm_boot::BootPhase::WitnessInit).unwrap();
-        tracker.complete_phase(rvm_boot::BootPhase::SchedulerInit).unwrap();
-        tracker.complete_phase(rvm_boot::BootPhase::RootPartition).unwrap();
-        tracker.complete_phase(rvm_boot::BootPhase::Handoff).unwrap();
+        tracker
+            .complete_phase(rvm_boot::BootPhase::HalInit)
+            .unwrap();
+        tracker
+            .complete_phase(rvm_boot::BootPhase::MemoryInit)
+            .unwrap();
+        tracker
+            .complete_phase(rvm_boot::BootPhase::CapabilityInit)
+            .unwrap();
+        tracker
+            .complete_phase(rvm_boot::BootPhase::WitnessInit)
+            .unwrap();
+        tracker
+            .complete_phase(rvm_boot::BootPhase::SchedulerInit)
+            .unwrap();
+        tracker
+            .complete_phase(rvm_boot::BootPhase::RootPartition)
+            .unwrap();
+        tracker
+            .complete_phase(rvm_boot::BootPhase::Handoff)
+            .unwrap();
 
         assert!(tracker.is_complete());
     }
@@ -104,7 +113,9 @@ mod tests {
     #[test]
     fn boot_phase_out_of_order() {
         let mut tracker = rvm_boot::BootTracker::new();
-        assert!(tracker.complete_phase(rvm_boot::BootPhase::MemoryInit).is_err());
+        assert!(tracker
+            .complete_phase(rvm_boot::BootPhase::MemoryInit)
+            .is_err());
     }
 
     #[test]
@@ -121,12 +132,7 @@ mod tests {
 
     #[test]
     fn security_gate_enforcement() {
-        let token = CapToken::new(
-            1,
-            CapType::Partition,
-            CapRights::READ | CapRights::WRITE,
-            0,
-        );
+        let token = CapToken::new(1, CapType::Partition, CapRights::READ | CapRights::WRITE, 0);
 
         let request = rvm_security::PolicyRequest {
             token: &token,
@@ -150,7 +156,7 @@ mod tests {
 
     #[test]
     fn witness_log_append() {
-        let mut log = rvm_witness::WitnessLog::<16>::new();
+        let log = rvm_witness::WitnessLog::<16>::new();
         assert!(log.is_empty());
 
         let record = WitnessRecord::zeroed();
@@ -190,11 +196,9 @@ mod tests {
         let mut mgr = rvm_partition::PartitionManager::new();
         assert_eq!(mgr.count(), 0);
 
-        let id = mgr.create(
-            rvm_partition::PartitionType::Agent,
-            2,
-            1,
-        ).unwrap();
+        let id = mgr
+            .create(rvm_partition::PartitionType::Agent, 2, 1)
+            .unwrap();
         assert_eq!(mgr.count(), 1);
         assert!(mgr.get(id).is_some());
     }
@@ -231,9 +235,9 @@ mod tests {
     #[test]
     fn cross_crate_partition_cap_proof_witness_chain() {
         use rvm_cap::CapabilityManager;
-        use rvm_types::{CapType, CapRights, ProofTier, ProofToken};
         use rvm_proof::context::ProofContextBuilder;
         use rvm_proof::engine::ProofEngine;
+        use rvm_types::{CapRights, CapType, ProofTier, ProofToken};
 
         // Step 1: Create a partition via the partition manager.
         let mut part_mgr = rvm_partition::PartitionManager::new();
@@ -255,7 +259,9 @@ mod tests {
             .unwrap();
 
         // Step 3: Verify P1 on the capability.
-        assert!(cap_mgr.verify_p1(root_idx, root_gen, CapRights::PROVE).is_ok());
+        assert!(cap_mgr
+            .verify_p1(root_idx, root_gen, CapRights::PROVE)
+            .is_ok());
 
         // Step 4: Run the full proof engine pipeline (P1 + P2 + witness).
         let witness_log = rvm_witness::WitnessLog::<32>::new();
@@ -293,19 +299,14 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn cross_crate_security_gate_valid_request() {
-        use rvm_security::{SecurityGate, GateRequest};
+        use rvm_security::{GateRequest, SecurityGate};
         use rvm_types::WitnessHash;
 
         let log = rvm_witness::WitnessLog::<32>::new();
         let gate = SecurityGate::new(&log);
 
         // Valid request: correct type, sufficient rights, valid proof.
-        let token = CapToken::new(
-            1,
-            CapType::Region,
-            CapRights::READ | CapRights::WRITE,
-            0,
-        );
+        let token = CapToken::new(1, CapType::Region, CapRights::READ | CapRights::WRITE, 0);
         let commitment = WitnessHash::from_bytes([0xAB; 32]);
         let request = GateRequest {
             token,
@@ -332,7 +333,7 @@ mod tests {
 
     #[test]
     fn cross_crate_security_gate_wrong_type() {
-        use rvm_security::{SecurityGate, SecurityError, GateRequest};
+        use rvm_security::{GateRequest, SecurityError, SecurityGate};
 
         let log = rvm_witness::WitnessLog::<32>::new();
         let gate = SecurityGate::new(&log);
@@ -361,7 +362,7 @@ mod tests {
 
     #[test]
     fn cross_crate_security_gate_insufficient_rights() {
-        use rvm_security::{SecurityGate, SecurityError, GateRequest};
+        use rvm_security::{GateRequest, SecurityError, SecurityGate};
 
         let log = rvm_witness::WitnessLog::<32>::new();
         let gate = SecurityGate::new(&log);
@@ -391,18 +392,13 @@ mod tests {
 
     #[test]
     fn cross_crate_security_gate_zero_proof_commitment() {
-        use rvm_security::{SecurityGate, SecurityError, GateRequest};
+        use rvm_security::{GateRequest, SecurityError, SecurityGate};
         use rvm_types::WitnessHash;
 
         let log = rvm_witness::WitnessLog::<32>::new();
         let gate = SecurityGate::new(&log);
 
-        let token = CapToken::new(
-            1,
-            CapType::Partition,
-            CapRights::READ | CapRights::WRITE,
-            0,
-        );
+        let token = CapToken::new(1, CapType::Partition, CapRights::READ | CapRights::WRITE, 0);
         let request = GateRequest {
             token,
             required_type: CapType::Partition,
@@ -493,7 +489,9 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn cross_crate_memory_region_and_tier() {
-        use rvm_memory::{RegionManager, RegionConfig, TierManager, Tier, BuddyAllocator, MemoryPermissions};
+        use rvm_memory::{
+            BuddyAllocator, MemoryPermissions, RegionConfig, RegionManager, Tier, TierManager,
+        };
         use rvm_types::{OwnedRegionId, PhysAddr};
 
         // Set up a buddy allocator.
@@ -543,8 +541,8 @@ mod tests {
 
         // Collect records and verify chain.
         let mut records = [WitnessRecord::zeroed(); 5];
-        for i in 0..5 {
-            records[i] = log.get(i).unwrap();
+        for (i, rec) in records.iter_mut().enumerate() {
+            *rec = log.get(i).unwrap();
         }
 
         let result = rvm_witness::verify_chain(&records);
@@ -610,9 +608,9 @@ mod tests {
     #[test]
     fn cross_crate_proof_retry_after_cap_grant() {
         use rvm_cap::CapabilityManager;
-        use rvm_types::{CapType, CapRights, ProofTier, ProofToken};
         use rvm_proof::context::ProofContextBuilder;
         use rvm_proof::engine::ProofEngine;
+        use rvm_types::{CapRights, CapType, ProofTier, ProofToken};
 
         let witness_log = rvm_witness::WitnessLog::<32>::new();
         let mut cap_mgr = CapabilityManager::<64>::with_defaults();
@@ -640,7 +638,9 @@ mod tests {
         let mut engine = ProofEngine::<64>::new();
 
         // First attempt: should fail (no PROVE right).
-        assert!(engine.verify_and_witness(&token, &context, &cap_mgr, &witness_log).is_err());
+        assert!(engine
+            .verify_and_witness(&token, &context, &cap_mgr, &witness_log)
+            .is_err());
         assert_eq!(witness_log.total_emitted(), 1); // Rejection emitted.
 
         // Create a new capability with PROVE rights.
@@ -660,7 +660,9 @@ mod tests {
             .build();
 
         // Second attempt with proper cap: should succeed.
-        assert!(engine.verify_and_witness(&token, &context2, &cap_mgr, &witness_log).is_ok());
+        assert!(engine
+            .verify_and_witness(&token, &context2, &cap_mgr, &witness_log)
+            .is_ok());
         assert_eq!(witness_log.total_emitted(), 2);
     }
 
@@ -713,7 +715,10 @@ mod tests {
 
         // Verify the final destroy witness.
         let destroy_record = kernel.witness_log().get(13).unwrap();
-        assert_eq!(destroy_record.action_kind, ActionKind::PartitionDestroy as u8);
+        assert_eq!(
+            destroy_record.action_kind,
+            ActionKind::PartitionDestroy as u8
+        );
         assert_eq!(destroy_record.target_object_id, pid.as_u32() as u64);
 
         // Verify monotonic sequence: each record's sequence >= previous.
@@ -740,8 +745,8 @@ mod tests {
     #[test]
     fn e2e_split_under_pressure() {
         use rvm_coherence::graph::CoherenceGraph;
-        use rvm_coherence::scoring::compute_coherence_score;
         use rvm_coherence::pressure::{compute_cut_pressure, evaluate_merge, SPLIT_THRESHOLD_BP};
+        use rvm_coherence::scoring::compute_coherence_score;
 
         let p1 = PartitionId::new(1);
         let p2 = PartitionId::new(2);
@@ -772,7 +777,10 @@ mod tests {
         assert!(score1.score.as_basis_points() > 0);
 
         let pressure1 = compute_cut_pressure(p1, &graph);
-        assert!(!pressure1.should_split, "should not split with heavy internal traffic");
+        assert!(
+            !pressure1.should_split,
+            "should not split with heavy internal traffic"
+        );
 
         // Phase 3: Flood external traffic to trigger split.
         // Add 100 heavy external messages.
@@ -809,9 +817,8 @@ mod tests {
     #[test]
     fn e2e_memory_tier_lifecycle() {
         use rvm_memory::{
-            BuddyAllocator, RegionManager, RegionConfig, TierManager, Tier,
-            MemoryPermissions, ReconstructionPipeline, CheckpointId,
-            create_checkpoint,
+            create_checkpoint, BuddyAllocator, CheckpointId, MemoryPermissions,
+            ReconstructionPipeline, RegionConfig, RegionManager, Tier, TierManager,
         };
         use rvm_types::{OwnedRegionId, PhysAddr};
 
@@ -867,7 +874,12 @@ mod tests {
         let pipeline = ReconstructionPipeline::<16>::new();
         let mut output = [0u8; 256];
         let result = pipeline
-            .reconstruct(&checkpoint, &compressed_buf[..compressed_size], &mut output, |_| &[])
+            .reconstruct(
+                &checkpoint,
+                &compressed_buf[..compressed_size],
+                &mut output,
+                |_| &[],
+            )
             .unwrap();
 
         // Phase 8: Verify data intact.
@@ -894,7 +906,7 @@ mod tests {
     #[test]
     fn e2e_capability_delegation_chain() {
         use rvm_cap::CapabilityManager;
-        use rvm_types::{CapType, CapRights};
+        use rvm_types::{CapRights, CapType};
 
         let mut cap_mgr = CapabilityManager::<64>::with_defaults();
         let owner = PartitionId::new(1);
@@ -914,7 +926,9 @@ mod tests {
             .unwrap();
 
         // Step 2: Derive child with READ + WRITE + GRANT.
-        let child_rights = CapRights::READ.union(CapRights::WRITE).union(CapRights::GRANT);
+        let child_rights = CapRights::READ
+            .union(CapRights::WRITE)
+            .union(CapRights::GRANT);
         let (child_idx, child_gen) = cap_mgr
             .grant(root_idx, root_gen, child_rights, 1, child_owner)
             .unwrap();
@@ -938,7 +952,9 @@ mod tests {
         assert!(cap_mgr.verify_p1(gc_idx, gc_gen, CapRights::READ).is_err());
 
         // Step 8: Verify root is still valid.
-        assert!(cap_mgr.verify_p1(root_idx, root_gen, CapRights::READ).is_ok());
+        assert!(cap_mgr
+            .verify_p1(root_idx, root_gen, CapRights::READ)
+            .is_ok());
     }
 
     // ---------------------------------------------------------------
@@ -951,19 +967,14 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn e2e_security_gate_rejection_cascade() {
-        use rvm_security::{SecurityGate, SecurityError, GateRequest};
+        use rvm_security::{GateRequest, SecurityError, SecurityGate};
         use rvm_types::WitnessHash;
 
         let log = rvm_witness::WitnessLog::<32>::new();
         let gate = SecurityGate::new(&log);
 
         // Step 1: Create a cap with READ only.
-        let read_token = CapToken::new(
-            1,
-            CapType::Partition,
-            CapRights::READ,
-            0,
-        );
+        let read_token = CapToken::new(1, CapType::Partition, CapRights::READ, 0);
 
         // Step 2: Attempt WRITE through the gate -> should be rejected.
         let request_write = GateRequest {
@@ -987,12 +998,7 @@ mod tests {
         assert_eq!(rejected_record.action_kind, ActionKind::ProofRejected as u8);
 
         // Step 4: Create a new cap with READ + WRITE.
-        let rw_token = CapToken::new(
-            2,
-            CapType::Partition,
-            CapRights::READ | CapRights::WRITE,
-            0,
-        );
+        let rw_token = CapToken::new(2, CapType::Partition, CapRights::READ | CapRights::WRITE, 0);
 
         // Step 5: Retry with proper rights -> should succeed.
         let request_retry = GateRequest {
@@ -1014,7 +1020,10 @@ mod tests {
         // Step 6: Verify success witness emitted.
         assert_eq!(log.total_emitted(), 2);
         let success_record = log.get(1).unwrap();
-        assert_eq!(success_record.action_kind, ActionKind::PartitionCreate as u8);
+        assert_eq!(
+            success_record.action_kind,
+            ActionKind::PartitionCreate as u8
+        );
 
         // Step 7: Also verify the full cascade with proof commitment.
         let commitment = WitnessHash::from_bytes([0xCC; 32]);
@@ -1044,8 +1053,8 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn e2e_boot_sequence_timing() {
-        use rvm_kernel::{Kernel, KernelConfig};
         use rvm_boot::MeasuredBootState;
+        use rvm_kernel::{Kernel, KernelConfig};
 
         // Phase 1: Boot the kernel.
         let mut kernel = Kernel::new(KernelConfig::default());
@@ -1065,7 +1074,10 @@ mod tests {
             } else if record.action_kind == ActionKind::BootComplete as u8 {
                 boot_complete_count += 1;
             } else {
-                panic!("unexpected action kind in boot sequence: {}", record.action_kind);
+                panic!(
+                    "unexpected action kind in boot sequence: {}",
+                    record.action_kind
+                );
             }
         }
         // 6 BootAttestation phases + 1 BootComplete (Handoff)
@@ -1134,7 +1146,10 @@ mod tests {
         // Verify highest priority runs first (priority = deadline urgency
         // since cut_pressure is ZERO).
         let (_, next) = sched.switch_next(0).unwrap();
-        assert_eq!(next, p_high, "Reflex mode should run highest priority first");
+        assert_eq!(
+            next, p_high,
+            "Reflex mode should run highest priority first"
+        );
 
         // Phase 3: Switch to Recovery mode.
         sched.set_mode(SchedulerMode::Recovery);
@@ -1184,9 +1199,9 @@ mod tests {
     #[test]
     fn e2e_coherence_graph_dynamics() {
         use rvm_coherence::graph::CoherenceGraph;
-        use rvm_coherence::scoring::compute_coherence_score;
-        use rvm_coherence::pressure::compute_cut_pressure;
         use rvm_coherence::mincut::MinCutBridge;
+        use rvm_coherence::pressure::compute_cut_pressure;
+        use rvm_coherence::scoring::compute_coherence_score;
 
         let p1 = PartitionId::new(1);
         let p2 = PartitionId::new(2);
@@ -1282,9 +1297,7 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn e2e_memory_reconstruction_with_deltas() {
-        use rvm_memory::{
-            ReconstructionPipeline, CheckpointId, WitnessDelta, create_checkpoint,
-        };
+        use rvm_memory::{create_checkpoint, CheckpointId, ReconstructionPipeline, WitnessDelta};
         use rvm_types::OwnedRegionId;
 
         // Original data: 32 bytes of 0xAA.
@@ -1327,18 +1340,13 @@ mod tests {
         // Reconstruct.
         let mut output = [0u8; 256];
         let result = pipeline
-            .reconstruct(
-                &checkpoint,
-                &compressed[..csize],
-                &mut output,
-                |d| {
-                    if d.sequence == 1 {
-                        &PATCH1
-                    } else {
-                        &PATCH2
-                    }
-                },
-            )
+            .reconstruct(&checkpoint, &compressed[..csize], &mut output, |d| {
+                if d.sequence == 1 {
+                    &PATCH1
+                } else {
+                    &PATCH2
+                }
+            })
             .unwrap();
 
         // Verify reconstruction.
@@ -1364,9 +1372,9 @@ mod tests {
     #[test]
     fn e2e_kernel_cap_proof_witness_full_pipeline() {
         use rvm_kernel::{Kernel, KernelConfig};
-        use rvm_types::{CapType, CapRights, PartitionConfig, ProofTier, ProofToken};
         use rvm_proof::context::ProofContextBuilder;
         use rvm_proof::engine::ProofEngine;
+        use rvm_types::{CapRights, CapType, PartitionConfig, ProofTier, ProofToken};
 
         // Boot.
         let mut kernel = Kernel::new(KernelConfig::default());
@@ -1494,8 +1502,8 @@ mod tests {
 
         // Collect all records and verify chain.
         let mut records = [WitnessRecord::zeroed(); 8];
-        for i in 0..8 {
-            records[i] = log.get(i).unwrap();
+        for (i, rec) in records.iter_mut().enumerate() {
+            *rec = log.get(i).unwrap();
         }
 
         let chain_result = rvm_witness::verify_chain(&records);
@@ -1587,7 +1595,7 @@ mod tests {
         record_b.action_kind = ActionKind::PartitionCreate as u8;
         record_b.proof_tier = 2;
         record_b.actor_partition_id = 2; // swapped
-        record_b.target_object_id = 1;   // swapped
+        record_b.target_object_id = 1; // swapped
         record_b.capability_hash = 0xABCD;
 
         // The HMAC signatures must differ because the signer hashes
@@ -1605,10 +1613,7 @@ mod tests {
         // against record B (with swapped fields).
         record_a.aux = sig_a;
         record_b.aux = sig_a; // forged: use A's signature on B
-        assert!(
-            signer.verify(&record_a),
-            "original record must verify"
-        );
+        assert!(signer.verify(&record_a), "original record must verify");
         assert!(
             !signer.verify(&record_b),
             "forged record with swapped fields must fail verification (A-02)"
@@ -1623,7 +1628,10 @@ mod tests {
             2, 0, 0, 0, // actor = 2 (swapped)
             1, 0, 0, 0, // some field = 1 (swapped)
         ]);
-        assert_ne!(hash_a, hash_b, "compute_record_hash must be order-sensitive (A-02)");
+        assert_ne!(
+            hash_a, hash_b,
+            "compute_record_hash must be order-sensitive (A-02)"
+        );
     }
 
     // ---------------------------------------------------------------
@@ -1636,9 +1644,9 @@ mod tests {
     #[test]
     fn adr142_reused_nonce_rejected() {
         use rvm_cap::CapabilityManager;
-        use rvm_types::{CapType, CapRights, ProofTier, ProofToken};
         use rvm_proof::context::ProofContextBuilder;
         use rvm_proof::engine::ProofEngine;
+        use rvm_types::{CapRights, CapType, ProofTier, ProofToken};
 
         let witness_log = rvm_witness::WitnessLog::<32>::new();
         let mut cap_mgr = CapabilityManager::<64>::with_defaults();
@@ -1670,13 +1678,17 @@ mod tests {
 
         // First submission with nonce 42 should succeed.
         assert!(
-            engine.verify_and_witness(&token, &context_n, &cap_mgr, &witness_log).is_ok(),
+            engine
+                .verify_and_witness(&token, &context_n, &cap_mgr, &witness_log)
+                .is_ok(),
             "first nonce=42 should succeed"
         );
 
         // Second submission with same nonce 42 should fail (replay).
         assert!(
-            engine.verify_and_witness(&token, &context_n, &cap_mgr, &witness_log).is_err(),
+            engine
+                .verify_and_witness(&token, &context_n, &cap_mgr, &witness_log)
+                .is_err(),
             "replayed nonce=42 must be rejected"
         );
 
@@ -1691,7 +1703,9 @@ mod tests {
             .build();
 
         assert!(
-            engine.verify_and_witness(&token, &context_zero, &cap_mgr, &witness_log).is_err(),
+            engine
+                .verify_and_witness(&token, &context_zero, &cap_mgr, &witness_log)
+                .is_err(),
             "nonce=0 must be rejected by default"
         );
 
@@ -1706,7 +1720,9 @@ mod tests {
             .build();
 
         assert!(
-            engine.verify_and_witness(&token, &context_fresh, &cap_mgr, &witness_log).is_ok(),
+            engine
+                .verify_and_witness(&token, &context_fresh, &cap_mgr, &witness_log)
+                .is_ok(),
             "fresh nonce=99 should succeed"
         );
     }
@@ -1742,13 +1758,9 @@ mod tests {
 
         // Collect all records and verify signatures are valid.
         let mut records = [WitnessRecord::zeroed(); 4];
-        for i in 0..4 {
-            records[i] = log.get(i).unwrap();
-            assert!(
-                signer.verify(&records[i]),
-                "untampered record {} must verify",
-                i
-            );
+        for (i, rec) in records.iter_mut().enumerate() {
+            *rec = log.get(i).unwrap();
+            assert!(signer.verify(rec), "untampered record {} must verify", i);
         }
 
         // Verify the untampered chain linkage is valid.
@@ -1774,8 +1786,8 @@ mod tests {
 
         // Also verify that tampering with prev_hash breaks chain integrity.
         let mut chain_records = [WitnessRecord::zeroed(); 4];
-        for i in 0..4 {
-            chain_records[i] = log.get(i).unwrap();
+        for (i, rec) in chain_records.iter_mut().enumerate() {
+            *rec = log.get(i).unwrap();
         }
         chain_records[2].prev_hash ^= 0xDEAD; // tamper chain link
         assert!(
@@ -1792,24 +1804,19 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn adr142_invalid_chain_link_rejected() {
-        use rvm_security::{SecurityGate, SecurityError, GateRequest, P3WitnessChain};
+        use rvm_security::{GateRequest, P3WitnessChain, SecurityError, SecurityGate};
 
         let log = rvm_witness::WitnessLog::<32>::new();
         let gate = SecurityGate::new(&log);
 
         // Build a 3-link chain where link[1].prev_hash != link[0].record_hash.
         let mut chain = P3WitnessChain::empty();
-        chain.links[0] = [0, 0x1111];         // prev_hash=0, record_hash=0x1111
-        chain.links[1] = [0xDEAD, 0x2222];    // prev_hash=0xDEAD (WRONG! should be 0x1111)
-        chain.links[2] = [0x2222, 0x3333];    // prev_hash=0x2222 (correct relative to link[1])
+        chain.links[0] = [0, 0x1111]; // prev_hash=0, record_hash=0x1111
+        chain.links[1] = [0xDEAD, 0x2222]; // prev_hash=0xDEAD (WRONG! should be 0x1111)
+        chain.links[2] = [0x2222, 0x3333]; // prev_hash=0x2222 (correct relative to link[1])
         chain.link_count = 3;
 
-        let token = CapToken::new(
-            1,
-            CapType::Partition,
-            CapRights::READ | CapRights::WRITE,
-            0,
-        );
+        let token = CapToken::new(1, CapType::Partition, CapRights::READ | CapRights::WRITE, 0);
         let request = GateRequest {
             token,
             required_type: CapType::Partition,
@@ -1910,7 +1917,7 @@ mod tests {
     #[test]
     fn adr142_cross_partition_key_isolation() {
         use rvm_proof::signer::{HmacSha256WitnessSigner, WitnessSigner};
-        use rvm_proof::{derive_witness_key, derive_key_bundle, dev_measurement};
+        use rvm_proof::{derive_key_bundle, derive_witness_key, dev_measurement};
 
         let measurement = dev_measurement();
 
@@ -1968,19 +1975,14 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn adr142_signed_security_gate_full_flow() {
-        use rvm_security::{SignedSecurityGate, GateRequest};
+        use rvm_security::{GateRequest, SignedSecurityGate};
         use rvm_witness::WitnessSigner as _;
 
         let log = rvm_witness::WitnessLog::<32>::new();
         let signer = rvm_witness::HmacWitnessSigner::new([0xDD; 32]);
         let gate = SignedSecurityGate::new(&log, &signer);
 
-        let token = CapToken::new(
-            1,
-            CapType::Partition,
-            CapRights::READ | CapRights::WRITE,
-            0,
-        );
+        let token = CapToken::new(1, CapType::Partition, CapRights::READ | CapRights::WRITE, 0);
 
         // Execute a gate check that should succeed.
         let request = GateRequest {

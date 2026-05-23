@@ -7,8 +7,8 @@ use crate::constant_time::ct_eq_32;
 use crate::signer::SignatureError;
 use crate::tee::TeeQuoteVerifier;
 use crate::tee_provider::{
-    platform_from_byte, QUOTE_LEN, QUOTE_MAGIC,
-    OFFSET_HMAC, OFFSET_MEASUREMENT, OFFSET_PLATFORM, OFFSET_REPORT_DATA,
+    platform_from_byte, OFFSET_HMAC, OFFSET_MEASUREMENT, OFFSET_PLATFORM, OFFSET_REPORT_DATA,
+    QUOTE_LEN, QUOTE_MAGIC,
 };
 
 #[cfg(feature = "crypto-sha256")]
@@ -152,10 +152,10 @@ impl TeeQuoteVerifier for SoftwareTeeVerifier {
 mod tests {
     #[cfg(feature = "crypto-sha256")]
     mod verifier_tests {
+        use crate::signer::SignatureError;
         use crate::tee::{TeePlatform, TeeQuoteProvider, TeeQuoteVerifier};
         use crate::tee_provider::SoftwareTeeProvider;
         use crate::tee_verifier::SoftwareTeeVerifier;
-        use crate::signer::SignatureError;
 
         fn test_pair() -> (SoftwareTeeProvider, SoftwareTeeVerifier) {
             let key = [0xBB; 32];
@@ -171,7 +171,9 @@ mod tests {
             let report_data = [0x11; 64];
             let quote = provider.generate_quote(&report_data).unwrap();
             let measurement = [0xAA; 32];
-            assert!(verifier.verify_quote(&quote, &measurement, &report_data).is_ok());
+            assert!(verifier
+                .verify_quote(&quote, &measurement, &report_data)
+                .is_ok());
         }
 
         #[test]

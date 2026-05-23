@@ -75,13 +75,13 @@ pub enum SecurityError {
 /// Compact P3 witness chain supplied by the caller for gate-side
 /// verification.
 ///
-/// Contains up to 4 chain links (prev_hash, record_hash) pairs
+/// Contains up to 4 chain links (`prev_hash`, `record_hash`) pairs
 /// and optional 8-byte signatures. The gate walks these links to
 /// verify chain continuity (and optionally signature integrity)
 /// rather than trusting the caller's `p3_chain_valid` boolean.
 #[derive(Debug, Clone, Copy)]
 pub struct P3WitnessChain {
-    /// Chain link data: pairs of (prev_hash: u64, record_hash: u64).
+    /// Chain link data: pairs of (`prev_hash`: u64, `record_hash`: u64).
     pub links: [[u64; 2]; 4],
     /// Optional 8-byte auxiliary signatures per link (from `WitnessRecord.aux`).
     ///
@@ -328,9 +328,15 @@ impl<'a, const N: usize, S: rvm_witness::WitnessSigner> SignedSecurityGate<'a, N
                 continue;
             }
             // Reconstruct a minimal witness record from chain link data.
+            // Truncate the 64-bit chain link values to 32-bit hash fields
+            // (intentional: chain links store the truncated hashes).
+            #[allow(clippy::cast_possible_truncation)]
             let mut record = WitnessRecord::zeroed();
-            record.prev_hash = chain.links[i][0] as u32;
-            record.record_hash = chain.links[i][1] as u32;
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                record.prev_hash = chain.links[i][0] as u32;
+                record.record_hash = chain.links[i][1] as u32;
+            }
             record.sequence = i as u64;
             record.aux = sig;
 
@@ -732,8 +738,12 @@ mod tests {
         // verify_chain_signatures expects.
         for i in 0..2 {
             let mut record = WitnessRecord::zeroed();
-            record.prev_hash = chain.links[i][0] as u32;
-            record.record_hash = chain.links[i][1] as u32;
+            // Intentional truncation: chain link values are stored as u32 hashes.
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                record.prev_hash = chain.links[i][0] as u32;
+                record.record_hash = chain.links[i][1] as u32;
+            }
             record.sequence = i as u64;
             chain.signatures[i] = signer.sign(&record);
         }

@@ -225,7 +225,10 @@ mod tests {
 
     #[test]
     fn test_boot_stage_next() {
-        assert_eq!(BootStage::ResetVector.next(), Some(BootStage::HardwareDetect));
+        assert_eq!(
+            BootStage::ResetVector.next(),
+            Some(BootStage::HardwareDetect)
+        );
         assert_eq!(BootStage::SchedulerEntry.next(), None);
     }
 
@@ -271,7 +274,8 @@ mod tests {
         let stages = BootStage::all();
         for (i, &stage) in stages.iter().enumerate() {
             seq.begin_stage(stage, i as u64 * 10).unwrap();
-            seq.complete_stage(stage, i as u64 * 10 + 5, [0; 32]).unwrap();
+            seq.complete_stage(stage, i as u64 * 10 + 5, [0; 32])
+                .unwrap();
         }
         assert!(seq.is_complete());
         let result = seq.begin_stage(BootStage::ResetVector, 0);
@@ -282,7 +286,8 @@ mod tests {
     fn test_timing() {
         let mut seq = BootSequence::new();
         seq.begin_stage(BootStage::ResetVector, 100).unwrap();
-        seq.complete_stage(BootStage::ResetVector, 200, [0; 32]).unwrap();
+        seq.complete_stage(BootStage::ResetVector, 200, [0; 32])
+            .unwrap();
 
         let t = seq.timing(BootStage::ResetVector);
         assert_eq!(t.start_tick, 100);
@@ -309,7 +314,8 @@ mod tests {
         let mut seq = BootSequence::new();
         let digest = [0xAB_u8; 32];
         seq.begin_stage(BootStage::ResetVector, 0).unwrap();
-        seq.complete_stage(BootStage::ResetVector, 10, digest).unwrap();
+        seq.complete_stage(BootStage::ResetVector, 10, digest)
+            .unwrap();
         assert_eq!(*seq.witness_digest(BootStage::ResetVector), digest);
     }
 }

@@ -72,19 +72,11 @@ fn context_budget_integration() {
 fn queue_command_lifecycle() {
     use rvm_types::PartitionId;
 
-    let mut q = GpuQueue::with_max_depth(
-        QueueId::new(0),
-        PartitionId::new(1),
-        4,
-    );
+    let mut q = GpuQueue::with_max_depth(QueueId::new(0), PartitionId::new(1), 4);
 
     let launch_cmd = QueueCommand::kernel_launch(KernelId::new(1));
     let barrier_cmd = QueueCommand::barrier();
-    let copy_cmd = QueueCommand::buffer_copy(
-        BufferId::new(0),
-        BufferId::new(1),
-        4096,
-    );
+    let copy_cmd = QueueCommand::buffer_copy(BufferId::new(0), BufferId::new(1), 4096);
 
     assert!(q.enqueue(&launch_cmd).is_ok());
     assert!(q.enqueue(&barrier_cmd).is_ok());
@@ -196,7 +188,10 @@ fn budget_check_compute_exceeds_limit() {
     use rvm_types::RvmError;
     let mut b = GpuBudget::new(1_000_000, 0, 0, 0);
     b.record_compute(500_000).unwrap();
-    assert_eq!(b.check_compute(500_001), Err(RvmError::ResourceLimitExceeded));
+    assert_eq!(
+        b.check_compute(500_001),
+        Err(RvmError::ResourceLimitExceeded)
+    );
     assert_eq!(b.compute_ns_used, 500_000);
 }
 
@@ -334,7 +329,7 @@ fn device_info_name_with_content() {
     let mut info = GpuDeviceInfo::default();
     let name = b"NVIDIA RTX 4090";
     info.name[..name.len()].copy_from_slice(name);
-    info.name_len = name.len() as u8;
+    info.name_len = u8::try_from(name.len()).unwrap_or(u8::MAX);
     assert_eq!(info.name_str(), "NVIDIA RTX 4090");
 }
 
@@ -342,7 +337,7 @@ fn device_info_name_with_content() {
 fn device_info_full_name_length() {
     let mut info = GpuDeviceInfo::default();
     for (i, byte) in info.name.iter_mut().enumerate() {
-        *byte = b'A' + (i % 26) as u8;
+        *byte = b'A' + u8::try_from(i % 26).unwrap_or(0);
     }
     info.name_len = 64;
     assert_eq!(info.name_str().len(), 64);
@@ -373,11 +368,7 @@ fn context_new_starts_initializing() {
 #[test]
 fn context_not_ready_when_error() {
     use rvm_types::PartitionId;
-    let mut ctx = GpuContext::new(
-        PartitionId::new(1),
-        0,
-        GpuBudget::new(1000, 1000, 1000, 10),
-    );
+    let mut ctx = GpuContext::new(PartitionId::new(1), 0, GpuBudget::new(1000, 1000, 1000, 10));
     ctx.status = GpuStatus::Error;
     assert!(!ctx.is_ready());
 }
@@ -385,11 +376,7 @@ fn context_not_ready_when_error() {
 #[test]
 fn context_not_ready_when_unavailable() {
     use rvm_types::PartitionId;
-    let mut ctx = GpuContext::new(
-        PartitionId::new(1),
-        0,
-        GpuBudget::new(1000, 1000, 1000, 10),
-    );
+    let mut ctx = GpuContext::new(PartitionId::new(1), 0, GpuBudget::new(1000, 1000, 1000, 10));
     ctx.status = GpuStatus::Unavailable;
     assert!(!ctx.is_ready());
 }
@@ -397,11 +384,7 @@ fn context_not_ready_when_unavailable() {
 #[test]
 fn context_record_kernel_launch_exceeds_budget() {
     use rvm_types::PartitionId;
-    let mut ctx = GpuContext::new(
-        PartitionId::new(1),
-        0,
-        GpuBudget::new(100, 0, 0, 1),
-    );
+    let mut ctx = GpuContext::new(PartitionId::new(1), 0, GpuBudget::new(100, 0, 0, 1));
     ctx.status = GpuStatus::Ready;
     ctx.record_kernel_launch(50).unwrap();
     assert!(ctx.record_kernel_launch(50).is_err());
@@ -410,11 +393,7 @@ fn context_record_kernel_launch_exceeds_budget() {
 #[test]
 fn context_record_transfer_exceeds_budget() {
     use rvm_types::PartitionId;
-    let mut ctx = GpuContext::new(
-        PartitionId::new(1),
-        0,
-        GpuBudget::new(0, 0, 1000, 0),
-    );
+    let mut ctx = GpuContext::new(PartitionId::new(1), 0, GpuBudget::new(0, 0, 1000, 0));
     ctx.status = GpuStatus::Ready;
     ctx.record_transfer(1000).unwrap();
     assert!(ctx.record_transfer(1).is_err());
@@ -423,11 +402,7 @@ fn context_record_transfer_exceeds_budget() {
 #[test]
 fn context_memory_alloc_and_free() {
     use rvm_types::PartitionId;
-    let mut ctx = GpuContext::new(
-        PartitionId::new(1),
-        0,
-        GpuBudget::new(0, 8192, 0, 0),
-    );
+    let mut ctx = GpuContext::new(PartitionId::new(1), 0, GpuBudget::new(0, 8192, 0, 0));
     ctx.status = GpuStatus::Ready;
     ctx.record_memory_alloc(4096).unwrap();
     assert_eq!(ctx.allocated_memory, 4096);
@@ -621,16 +596,43 @@ fn gpu_error_all_variants_distinct() {
 #[test]
 fn gpu_error_to_rvm_error_complete() {
     use rvm_types::RvmError;
-    assert_eq!(RvmError::from(GpuError::DeviceNotFound), RvmError::DeviceLeaseNotFound);
-    assert_eq!(RvmError::from(GpuError::DeviceNotReady), RvmError::InvalidPartitionState);
+    assert_eq!(
+        RvmError::from(GpuError::DeviceNotFound),
+        RvmError::DeviceLeaseNotFound
+    );
+    assert_eq!(
+        RvmError::from(GpuError::DeviceNotReady),
+        RvmError::InvalidPartitionState
+    );
     assert_eq!(RvmError::from(GpuError::OutOfMemory), RvmError::OutOfMemory);
-    assert_eq!(RvmError::from(GpuError::BudgetExceeded), RvmError::ResourceLimitExceeded);
-    assert_eq!(RvmError::from(GpuError::KernelTimeout), RvmError::InternalError);
-    assert_eq!(RvmError::from(GpuError::InvalidLaunchConfig), RvmError::InternalError);
-    assert_eq!(RvmError::from(GpuError::BufferTooLarge), RvmError::ResourceLimitExceeded);
-    assert_eq!(RvmError::from(GpuError::QueueFull), RvmError::ResourceLimitExceeded);
-    assert_eq!(RvmError::from(GpuError::IommuViolation), RvmError::InternalError);
-    assert_eq!(RvmError::from(GpuError::CapabilityDenied), RvmError::InsufficientCapability);
+    assert_eq!(
+        RvmError::from(GpuError::BudgetExceeded),
+        RvmError::ResourceLimitExceeded
+    );
+    assert_eq!(
+        RvmError::from(GpuError::KernelTimeout),
+        RvmError::InternalError
+    );
+    assert_eq!(
+        RvmError::from(GpuError::InvalidLaunchConfig),
+        RvmError::InternalError
+    );
+    assert_eq!(
+        RvmError::from(GpuError::BufferTooLarge),
+        RvmError::ResourceLimitExceeded
+    );
+    assert_eq!(
+        RvmError::from(GpuError::QueueFull),
+        RvmError::ResourceLimitExceeded
+    );
+    assert_eq!(
+        RvmError::from(GpuError::IommuViolation),
+        RvmError::InternalError
+    );
+    assert_eq!(
+        RvmError::from(GpuError::CapabilityDenied),
+        RvmError::InsufficientCapability
+    );
     assert_eq!(RvmError::from(GpuError::Unsupported), RvmError::Unsupported);
 }
 

@@ -63,8 +63,7 @@ pub fn validate_grant(
     let source_rights = source.token.rights();
 
     let has_grant = source_rights.contains(CapRights::GRANT);
-    let has_grant_once = policy.allow_grant_once
-        && source_rights.contains(CapRights::GRANT_ONCE);
+    let has_grant_once = policy.allow_grant_once && source_rights.contains(CapRights::GRANT_ONCE);
 
     // Source must hold GRANT or GRANT_ONCE to delegate.
     if !has_grant && !has_grant_once {
@@ -87,12 +86,7 @@ pub fn validate_grant(
 
     let _ = badge; // Badge is carried by the slot, not the token.
 
-    let derived_token = CapToken::new(
-        new_id,
-        source.token.cap_type(),
-        requested_rights,
-        epoch,
-    );
+    let derived_token = CapToken::new(new_id, source.token.cap_type(), requested_rights, epoch);
 
     // Signal that GRANT_ONCE should be consumed if it was the only
     // grant authority (source has GRANT_ONCE but not GRANT).
@@ -129,7 +123,8 @@ mod tests {
     fn test_valid_grant() {
         let source = make_source(all_rights(), 0);
         let policy = GrantPolicy::new();
-        let (token, depth, consume) = validate_grant(&source, CapRights::READ, 10, 42, 0, policy).unwrap();
+        let (token, depth, consume) =
+            validate_grant(&source, CapRights::READ, 10, 42, 0, policy).unwrap();
         assert_eq!(token.rights(), CapRights::READ);
         assert_eq!(depth, 1);
         assert!(!consume); // Source has full GRANT, so GRANT_ONCE is not consumed.
@@ -204,8 +199,7 @@ mod tests {
             .union(CapRights::GRANT_ONCE);
         let source = make_source(rights, 0);
         let policy = GrantPolicy::new();
-        let (_, _, consume) =
-            validate_grant(&source, CapRights::READ, 10, 0, 0, policy).unwrap();
+        let (_, _, consume) = validate_grant(&source, CapRights::READ, 10, 0, 0, policy).unwrap();
         assert!(!consume);
     }
 

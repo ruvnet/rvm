@@ -69,9 +69,8 @@ impl LaunchConfig {
     /// as a `u64` to avoid overflow on large grid configurations.
     #[must_use]
     pub const fn total_threads(&self) -> u64 {
-        let groups = self.workgroups[0] as u64
-            * self.workgroups[1] as u64
-            * self.workgroups[2] as u64;
+        let groups =
+            self.workgroups[0] as u64 * self.workgroups[1] as u64 * self.workgroups[2] as u64;
         let threads_per_group = self.workgroup_size[0] as u64
             * self.workgroup_size[1] as u64
             * self.workgroup_size[2] as u64;
@@ -89,15 +88,10 @@ impl LaunchConfig {
     /// zero or the total thread count exceeds `u32::MAX`.
     pub const fn validate(&self) -> Result<(), GpuError> {
         // All dimensions must be non-zero.
-        if self.workgroups[0] == 0
-            || self.workgroups[1] == 0
-            || self.workgroups[2] == 0
-        {
+        if self.workgroups[0] == 0 || self.workgroups[1] == 0 || self.workgroups[2] == 0 {
             return Err(GpuError::InvalidLaunchConfig);
         }
-        if self.workgroup_size[0] == 0
-            || self.workgroup_size[1] == 0
-            || self.workgroup_size[2] == 0
+        if self.workgroup_size[0] == 0 || self.workgroup_size[1] == 0 || self.workgroup_size[2] == 0
         {
             return Err(GpuError::InvalidLaunchConfig);
         }
@@ -176,7 +170,7 @@ mod tests {
             shared_memory_bytes: 0,
             timeout_ns: DEFAULT_KERNEL_TIMEOUT_NS,
         };
-        assert_eq!(cfg.total_threads(), 4 * 2 * 1 * 32);
+        assert_eq!(cfg.total_threads(), 4 * 2 * 32);
         assert!(cfg.validate().is_ok());
     }
 
@@ -248,7 +242,7 @@ mod tests {
         };
         let name = b"mincut_v1";
         kernel.name[..name.len()].copy_from_slice(name);
-        kernel.name_len = name.len() as u8;
+        kernel.name_len = u8::try_from(name.len()).unwrap_or(u8::MAX);
         assert_eq!(kernel.name_str(), "mincut_v1");
     }
 }

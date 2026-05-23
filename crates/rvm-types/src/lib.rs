@@ -64,8 +64,8 @@ pub use capability::{
 
 // --- Witness types ---
 pub use witness::{
-    ActionKind, WitnessHash, WitnessRecord, WITNESS_RECORD_SIZE, WITNESS_RING_CAPACITY, fnv1a_32,
-    fnv1a_64,
+    fnv1a_32, fnv1a_64, ActionKind, WitnessHash, WitnessRecord, WITNESS_RECORD_SIZE,
+    WITNESS_RING_CAPACITY,
 };
 
 // --- Coherence types ---
@@ -90,7 +90,7 @@ pub use proof::{ProofResult, ProofTier, ProofToken};
 pub use scheduler::{EpochConfig, EpochSummary, Priority, SchedulerMode};
 
 // --- Recovery types ---
-pub use recovery::{FailureClass, RecoveryCheckpoint, ReconstructionReceipt};
+pub use recovery::{FailureClass, ReconstructionReceipt, RecoveryCheckpoint};
 
 // --- Configuration ---
 pub use config::RvmConfig;

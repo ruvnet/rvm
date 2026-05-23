@@ -69,9 +69,9 @@ impl From<GpuError> for RvmError {
             GpuError::DeviceNotFound => RvmError::DeviceLeaseNotFound,
             GpuError::DeviceNotReady => RvmError::InvalidPartitionState,
             GpuError::OutOfMemory => RvmError::OutOfMemory,
-            GpuError::BudgetExceeded
-            | GpuError::BufferTooLarge
-            | GpuError::QueueFull => RvmError::ResourceLimitExceeded,
+            GpuError::BudgetExceeded | GpuError::BufferTooLarge | GpuError::QueueFull => {
+                RvmError::ResourceLimitExceeded
+            }
             GpuError::KernelTimeout
             | GpuError::KernelCompilationFailed
             | GpuError::InvalidLaunchConfig
@@ -89,13 +89,28 @@ mod tests {
 
     #[test]
     fn gpu_error_to_rvm_error_mapping() {
-        assert_eq!(RvmError::from(GpuError::DeviceNotFound), RvmError::DeviceLeaseNotFound);
+        assert_eq!(
+            RvmError::from(GpuError::DeviceNotFound),
+            RvmError::DeviceLeaseNotFound
+        );
         assert_eq!(RvmError::from(GpuError::OutOfMemory), RvmError::OutOfMemory);
-        assert_eq!(RvmError::from(GpuError::BudgetExceeded), RvmError::ResourceLimitExceeded);
-        assert_eq!(RvmError::from(GpuError::CapabilityDenied), RvmError::InsufficientCapability);
+        assert_eq!(
+            RvmError::from(GpuError::BudgetExceeded),
+            RvmError::ResourceLimitExceeded
+        );
+        assert_eq!(
+            RvmError::from(GpuError::CapabilityDenied),
+            RvmError::InsufficientCapability
+        );
         assert_eq!(RvmError::from(GpuError::Unsupported), RvmError::Unsupported);
-        assert_eq!(RvmError::from(GpuError::IommuViolation), RvmError::InternalError);
-        assert_eq!(RvmError::from(GpuError::KernelTimeout), RvmError::InternalError);
+        assert_eq!(
+            RvmError::from(GpuError::IommuViolation),
+            RvmError::InternalError
+        );
+        assert_eq!(
+            RvmError::from(GpuError::KernelTimeout),
+            RvmError::InternalError
+        );
     }
 
     #[test]

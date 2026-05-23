@@ -302,7 +302,7 @@ impl<const N: usize> DerivationTree<N> {
             let mut cursor = self.nodes[i].first_child;
             while cursor != u32::MAX {
                 if cursor == child_index {
-                    return Some(i as u32);
+                    return Some(u32::try_from(i).unwrap_or(u32::MAX));
                 }
                 let c = cursor as usize;
                 if c >= N {

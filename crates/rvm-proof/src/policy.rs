@@ -199,7 +199,7 @@ impl PolicyEvaluator {
             return true;
         }
         // O(1) hash-indexed lookup instead of linear scan.
-        let hash_slot = (nonce as usize) % NONCE_RING_SIZE;
+        let hash_slot = usize::try_from(nonce % NONCE_RING_SIZE as u64).unwrap_or(0);
         if self.nonce_hash[hash_slot] == nonce {
             return true;
         }
@@ -210,7 +210,7 @@ impl PolicyEvaluator {
     fn record_nonce(&mut self, nonce: u64) {
         self.nonce_ring[self.nonce_write_pos] = nonce;
         // Populate hash index for O(1) lookup.
-        let hash_slot = (nonce as usize) % NONCE_RING_SIZE;
+        let hash_slot = usize::try_from(nonce % NONCE_RING_SIZE as u64).unwrap_or(0);
         self.nonce_hash[hash_slot] = nonce;
         self.nonce_write_pos = (self.nonce_write_pos + 1) % NONCE_RING_SIZE;
         // Advance watermark when the write pointer wraps around.
@@ -271,7 +271,10 @@ mod tests {
             .time_window(500, 1000)
             .nonce(1)
             .build();
-        assert_eq!(evaluator.evaluate_rule(Rule::RegionBounds, &ctx), Err(RvmError::ProofInvalid));
+        assert_eq!(
+            evaluator.evaluate_rule(Rule::RegionBounds, &ctx),
+            Err(RvmError::ProofInvalid)
+        );
     }
 
     #[test]
@@ -283,7 +286,10 @@ mod tests {
             .time_window(2000, 1000) // current > expiry
             .nonce(1)
             .build();
-        assert_eq!(evaluator.evaluate_rule(Rule::LeaseExpiry, &ctx), Err(RvmError::DeviceLeaseExpired));
+        assert_eq!(
+            evaluator.evaluate_rule(Rule::LeaseExpiry, &ctx),
+            Err(RvmError::DeviceLeaseExpired)
+        );
     }
 
     #[test]
@@ -295,7 +301,10 @@ mod tests {
         assert!(evaluator.evaluate_all_rules(&ctx).is_ok());
 
         // Second call with same nonce fails.
-        assert_eq!(evaluator.evaluate_all_rules(&ctx), Err(RvmError::ProofInvalid));
+        assert_eq!(
+            evaluator.evaluate_all_rules(&ctx),
+            Err(RvmError::ProofInvalid)
+        );
     }
 
     #[test]
@@ -309,7 +318,10 @@ mod tests {
             .build();
 
         // Zero nonce is now rejected by default (no free bypass).
-        assert_eq!(evaluator.evaluate_all_rules(&ctx), Err(RvmError::ProofInvalid));
+        assert_eq!(
+            evaluator.evaluate_all_rules(&ctx),
+            Err(RvmError::ProofInvalid)
+        );
     }
 
     #[test]
@@ -340,7 +352,10 @@ mod tests {
             .build();
 
         // Should return a single combined error.
-        assert_eq!(evaluator.evaluate_all_rules(&ctx), Err(RvmError::ProofInvalid));
+        assert_eq!(
+            evaluator.evaluate_all_rules(&ctx),
+            Err(RvmError::ProofInvalid)
+        );
     }
 
     #[test]
@@ -603,7 +618,10 @@ mod tests {
             .time_window(500, 1000)
             .nonce(100)
             .build();
-        assert_eq!(evaluator.evaluate_all_rules(&ctx), Err(RvmError::ProofInvalid));
+        assert_eq!(
+            evaluator.evaluate_all_rules(&ctx),
+            Err(RvmError::ProofInvalid)
+        );
     }
 
     #[test]

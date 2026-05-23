@@ -121,11 +121,7 @@ impl<const MAX_CPUS: usize> SmpCoordinator<MAX_CPUS> {
     ///
     /// * [`RvmError::ResourceLimitExceeded`] -- `cpu_id` is out of range.
     /// * [`RvmError::InvalidPartitionState`] -- CPU is offline or already busy.
-    pub fn assign_partition(
-        &mut self,
-        cpu_id: u8,
-        partition: PartitionId,
-    ) -> RvmResult<()> {
+    pub fn assign_partition(&mut self, cpu_id: u8, partition: PartitionId) -> RvmResult<()> {
         let state = self
             .get_state_mut(cpu_id)
             .ok_or(RvmError::ResourceLimitExceeded)?;
@@ -175,10 +171,7 @@ impl<const MAX_CPUS: usize> SmpCoordinator<MAX_CPUS> {
     /// Return the number of online CPUs.
     #[must_use]
     pub fn active_count(&self) -> u16 {
-        self.cpu_states
-            .iter()
-            .filter(|s| s.online)
-            .count() as u16
+        self.cpu_states.iter().filter(|s| s.online).count() as u16
     }
 
     /// Provide a rebalance hint: `(overloaded_cpu, idle_cpu)`.

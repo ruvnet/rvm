@@ -13,9 +13,7 @@
 //! - **Overlap detection**: Creating a region that overlaps an existing one in the
 //!   same partition is rejected.
 
-use rvm_types::{
-    GuestPhysAddr, OwnedRegionId, PartitionId, PhysAddr, RvmError, RvmResult,
-};
+use rvm_types::{GuestPhysAddr, OwnedRegionId, PartitionId, PhysAddr, RvmError, RvmResult};
 
 use crate::tier::Tier;
 use crate::{MemoryPermissions, PAGE_SIZE};
@@ -286,11 +284,7 @@ impl<const MAX: usize> RegionManager<MAX> {
     /// Returns [`RvmError::PartitionNotFound`] if the region does not exist.
     /// Returns [`RvmError::MemoryOverlap`] if the new owner already has a
     /// region at the same guest address range.
-    pub fn transfer(
-        &mut self,
-        region_id: OwnedRegionId,
-        new_owner: PartitionId,
-    ) -> RvmResult<()> {
+    pub fn transfer(&mut self, region_id: OwnedRegionId, new_owner: PartitionId) -> RvmResult<()> {
         let idx = self
             .find_slot(region_id)
             .ok_or(RvmError::PartitionNotFound)?;
@@ -322,18 +316,13 @@ impl<const MAX: usize> RegionManager<MAX> {
 
     /// Look up a region by its identifier (mutable).
     pub fn get_mut(&mut self, region_id: OwnedRegionId) -> Option<&mut OwnedRegion> {
-        self.find_slot(region_id)
-            .map(|idx| &mut self.regions[idx])
+        self.find_slot(region_id).map(|idx| &mut self.regions[idx])
     }
 
     /// Translate a guest physical address to a host physical address
     /// within the given partition.
     #[must_use]
-    pub fn translate(
-        &self,
-        owner: PartitionId,
-        guest: GuestPhysAddr,
-    ) -> Option<AddressMapping> {
+    pub fn translate(&self, owner: PartitionId, guest: GuestPhysAddr) -> Option<AddressMapping> {
         for region in &self.regions {
             if !region.occupied || region.owner != owner {
                 continue;
@@ -361,11 +350,7 @@ impl<const MAX: usize> RegionManager<MAX> {
 
     /// Iterate over the region IDs owned by a given partition.
     /// Writes matching IDs into `out` and returns the count written.
-    pub fn regions_for_partition(
-        &self,
-        owner: PartitionId,
-        out: &mut [OwnedRegionId],
-    ) -> usize {
+    pub fn regions_for_partition(&self, owner: PartitionId, out: &mut [OwnedRegionId]) -> usize {
         let mut written = 0;
         for region in &self.regions {
             if written >= out.len() {
@@ -549,7 +534,8 @@ mod tests {
     fn translate_guest_to_host() {
         let mut mgr = RegionManager::<8>::new();
         // Region at guest 0x1000, host 0x2000_0000, 4 pages (16 KiB).
-        mgr.create(default_config(1, 1, 0x1000, 0x2000_0000)).unwrap();
+        mgr.create(default_config(1, 1, 0x1000, 0x2000_0000))
+            .unwrap();
 
         // Translate guest 0x1000 (start of region).
         let m = mgr.translate(pid(1), gpa(0x1000)).unwrap();
@@ -590,14 +576,22 @@ mod tests {
         let mut mgr = RegionManager::<8>::new();
         let id1 = mgr
             .create_auto_id(
-                pid(1), gpa(0x1000), pa(0x1_0000), 4,
-                Tier::Warm, MemoryPermissions::READ_WRITE,
+                pid(1),
+                gpa(0x1000),
+                pa(0x1_0000),
+                4,
+                Tier::Warm,
+                MemoryPermissions::READ_WRITE,
             )
             .unwrap();
         let id2 = mgr
             .create_auto_id(
-                pid(1), gpa(0x5000), pa(0x2_0000), 2,
-                Tier::Hot, MemoryPermissions::READ_ONLY,
+                pid(1),
+                gpa(0x5000),
+                pa(0x2_0000),
+                2,
+                Tier::Hot,
+                MemoryPermissions::READ_ONLY,
             )
             .unwrap();
         assert_ne!(id1, id2);

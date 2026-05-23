@@ -47,7 +47,7 @@ pub use derivation::{DerivationNode, DerivationTree};
 pub use error::{CapError, CapResult, ProofError};
 pub use grant::GrantPolicy;
 pub use manager::{CapManagerConfig, CapabilityManager, ManagerStats};
-pub use revoke::{RevokeResult, revoke_single};
+pub use revoke::{revoke_single, RevokeResult};
 pub use table::{CapSlot, CapabilityTable};
 pub use verify::ProofVerifier;
 

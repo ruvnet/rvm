@@ -124,7 +124,11 @@ impl<const MAX_CPUS: usize, const MAX_PARTITIONS: usize> Scheduler<MAX_CPUS, MAX
     pub fn tick_epoch(&mut self) -> EpochSummary {
         let runnable: u32 = self.queue_lens.iter().map(|&l| l as u32).sum();
         // Clamp to u16::MAX to fit EpochSummary::runnable_count.
-        let clamped = if runnable > u16::MAX as u32 { u16::MAX } else { runnable as u16 };
+        let clamped = if runnable > u16::MAX as u32 {
+            u16::MAX
+        } else {
+            runnable as u16
+        };
         self.epoch.advance(clamped)
     }
 
@@ -220,12 +224,11 @@ impl<const MAX_CPUS: usize, const MAX_PARTITIONS: usize> Scheduler<MAX_CPUS, MAX
                 largest = right;
             }
 
-            if largest != pos {
-                queue.swap(pos, largest);
-                pos = largest;
-            } else {
+            if largest == pos {
                 break;
             }
+            queue.swap(pos, largest);
+            pos = largest;
         }
 
         let old = self.per_cpu[cpu].current;

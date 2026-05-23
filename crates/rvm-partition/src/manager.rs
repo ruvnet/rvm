@@ -54,7 +54,7 @@ impl PartitionManager {
                 // Populate direct lookup index.
                 let id_val = id.as_u32() as usize;
                 if id_val < ID_INDEX_SIZE {
-                    self.id_to_slot[id_val] = Some(i as u8);
+                    self.id_to_slot[id_val] = Some(u8::try_from(i).unwrap_or(u8::MAX));
                 }
                 return Ok(id);
             }

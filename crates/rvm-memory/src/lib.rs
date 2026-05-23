@@ -49,8 +49,8 @@ pub mod tier;
 // Re-export key types at crate root for convenience.
 pub use allocator::BuddyAllocator;
 pub use reconstruction::{
-    CheckpointId, CompressedCheckpoint, ReconstructionPipeline, ReconstructionResult,
-    WitnessDelta, create_checkpoint,
+    create_checkpoint, CheckpointId, CompressedCheckpoint, ReconstructionPipeline,
+    ReconstructionResult, WitnessDelta,
 };
 pub use region::{AddressMapping, OwnedRegion, RegionConfig, RegionManager};
 pub use tier::{RegionTierState, Tier, TierManager, TierThresholds};

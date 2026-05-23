@@ -204,10 +204,7 @@ impl GpuContext {
             return Err(RvmError::InvalidPartitionState);
         }
         self.allocated_memory = self.allocated_memory.saturating_sub(bytes);
-        self.budget.memory_bytes_used = self
-            .budget
-            .memory_bytes_used
-            .saturating_sub(bytes);
+        self.budget.memory_bytes_used = self.budget.memory_bytes_used.saturating_sub(bytes);
         Ok(())
     }
 
@@ -269,7 +266,10 @@ mod tests {
     #[test]
     fn check_budget_fails_when_not_ready() {
         let ctx = GpuContext::new(test_partition(), 0, test_budget());
-        assert_eq!(ctx.check_budget(1_000_000, 1024), Err(RvmError::InvalidPartitionState));
+        assert_eq!(
+            ctx.check_budget(1_000_000, 1024),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
@@ -293,7 +293,10 @@ mod tests {
     #[test]
     fn record_kernel_launch_fails_when_not_ready() {
         let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
-        assert_eq!(ctx.record_kernel_launch(1_000_000), Err(RvmError::InvalidPartitionState));
+        assert_eq!(
+            ctx.record_kernel_launch(1_000_000),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
@@ -306,7 +309,10 @@ mod tests {
     #[test]
     fn record_transfer_fails_when_not_ready() {
         let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
-        assert_eq!(ctx.record_transfer(2048), Err(RvmError::InvalidPartitionState));
+        assert_eq!(
+            ctx.record_transfer(2048),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
@@ -324,13 +330,19 @@ mod tests {
     #[test]
     fn record_memory_alloc_fails_when_not_ready() {
         let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
-        assert_eq!(ctx.record_memory_alloc(4096), Err(RvmError::InvalidPartitionState));
+        assert_eq!(
+            ctx.record_memory_alloc(4096),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
     fn record_memory_free_fails_when_not_ready() {
         let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
-        assert_eq!(ctx.record_memory_free(4096), Err(RvmError::InvalidPartitionState));
+        assert_eq!(
+            ctx.record_memory_free(4096),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]
@@ -363,7 +375,10 @@ mod tests {
     #[test]
     fn try_launch_fails_when_not_ready() {
         let mut ctx = GpuContext::new(test_partition(), 0, test_budget());
-        assert_eq!(ctx.try_launch(1_000_000, 2048), Err(RvmError::InvalidPartitionState));
+        assert_eq!(
+            ctx.try_launch(1_000_000, 2048),
+            Err(RvmError::InvalidPartitionState)
+        );
     }
 
     #[test]

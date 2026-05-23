@@ -144,7 +144,11 @@ impl<const N: usize> WitnessLog<N> {
     pub fn len(&self) -> usize {
         let total = self.inner.lock().total_emitted;
         // Safe: if total < N then total fits in usize since N is usize.
-        if total >= N as u64 { N } else { total as usize }
+        if total >= N as u64 {
+            N
+        } else {
+            total as usize
+        }
     }
 
     /// Returns true if no records have been emitted.
@@ -269,7 +273,7 @@ mod tests {
 
     #[test]
     fn test_signed_append_sets_aux() {
-        use crate::signer::{WitnessSigner, default_signer};
+        use crate::signer::default_signer;
 
         let log = WitnessLog::<16>::new();
         let signer = default_signer();
@@ -285,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_signed_append_signature_verifiable() {
-        use crate::signer::{WitnessSigner, default_signer};
+        use crate::signer::{default_signer, WitnessSigner};
 
         let log = WitnessLog::<16>::new();
         let signer = default_signer();
@@ -300,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_signed_append_chain_hashes_included() {
-        use crate::signer::{WitnessSigner, default_signer};
+        use crate::signer::{default_signer, WitnessSigner};
 
         let log = WitnessLog::<16>::new();
         let signer = default_signer();
@@ -327,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_signed_append_tampered_record_fails_verify() {
-        use crate::signer::{WitnessSigner, default_signer};
+        use crate::signer::{default_signer, WitnessSigner};
 
         let log = WitnessLog::<16>::new();
         let signer = default_signer();

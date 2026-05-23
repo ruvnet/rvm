@@ -126,6 +126,7 @@ fn fnv1a_64(data: &[u8]) -> u64 {
 /// `aux` and `pad`). This digest can be fed to an HMAC signer or used
 /// as input to the proof-crate's 64-byte `WitnessSigner` trait.
 #[cfg(feature = "crypto-sha256")]
+#[must_use]
 pub fn record_to_digest(record: &WitnessRecord) -> [u8; 32] {
     let buf = record_to_bytes(record);
     let hash = Sha256::digest(&buf[..52]);
@@ -188,8 +189,8 @@ impl HmacWitnessSigner {
     /// Compute the raw 8-byte truncated HMAC-SHA256 signature.
     fn compute_signature(&self, record: &WitnessRecord) -> [u8; 8] {
         let buf = record_to_bytes(record);
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(&self.key)
-            .expect("HMAC key length is 32 bytes");
+        let mut mac =
+            <HmacSha256 as Mac>::new_from_slice(&self.key).expect("HMAC key length is 32 bytes");
         mac.update(&buf[..52]);
         let result = mac.finalize();
         let tag = result.into_bytes();

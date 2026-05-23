@@ -44,7 +44,7 @@ impl MeasuredBootState {
     /// The new accumulator is `SHA-256(accumulator || phase_index || hash_bytes)`.
     #[cfg(feature = "crypto-sha256")]
     pub fn extend_measurement(&mut self, phase: BootStage, hash_bytes: &[u8; 32]) {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let idx = phase as usize;
         self.phase_hashes[idx] = *hash_bytes;
@@ -205,7 +205,12 @@ mod tests {
         for (i, &stage) in stages.iter().enumerate() {
             state.extend_measurement(stage, &[i as u8; 32]);
             let current = state.get_attestation_digest();
-            assert_ne!(current, prev, "digest unchanged after stage {}", stage.name());
+            assert_ne!(
+                current,
+                prev,
+                "digest unchanged after stage {}",
+                stage.name()
+            );
             prev = current;
         }
     }

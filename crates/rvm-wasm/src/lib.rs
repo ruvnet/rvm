@@ -137,6 +137,7 @@ impl WasmSectionId {
 
 /// Summary of validated Wasm sections found in a module.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct WasmValidationResult {
     /// Number of sections found.
     pub section_count: u16,
@@ -193,8 +194,7 @@ pub fn validate_module(bytes: &[u8]) -> RvmResult<WasmValidationResult> {
         let section_id_byte = bytes[pos];
         pos += 1;
 
-        let section_id = WasmSectionId::from_u8(section_id_byte)
-            .ok_or(RvmError::ProofInvalid)?;
+        let section_id = WasmSectionId::from_u8(section_id_byte).ok_or(RvmError::ProofInvalid)?;
 
         // Read section size (LEB128 u32).
         let (section_size, bytes_read) = read_leb128_u32(bytes, pos)?;
@@ -283,8 +283,8 @@ fn read_leb128_u32(bytes: &[u8], start: usize) -> RvmResult<(u32, usize)> {
 #[cfg(test)]
 mod tests {
     extern crate alloc;
-    use alloc::vec;
     use super::*;
+    use alloc::vec;
 
     /// Minimal valid Wasm module: magic + version, no sections.
     fn minimal_wasm() -> [u8; 8] {
@@ -297,7 +297,10 @@ mod tests {
         let mut bytes = vec![0u8; MAX_MODULE_SIZE + 1];
         // Set valid header so we know it's the size check that fires.
         bytes[..8].copy_from_slice(&minimal_wasm());
-        assert_eq!(validate_module(&bytes), Err(RvmError::ResourceLimitExceeded));
+        assert_eq!(
+            validate_module(&bytes),
+            Err(RvmError::ResourceLimitExceeded)
+        );
     }
 
     #[test]

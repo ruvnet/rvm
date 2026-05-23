@@ -151,7 +151,7 @@ mod tests {
         let mut info = GpuDeviceInfo::default();
         let name = b"TestGPU";
         info.name[..name.len()].copy_from_slice(name);
-        info.name_len = name.len() as u8;
+        info.name_len = u8::try_from(name.len()).unwrap_or(u8::MAX);
         assert_eq!(info.name_str(), "TestGPU");
     }
 
@@ -166,7 +166,7 @@ mod tests {
         let mut info = GpuDeviceInfo::default();
         for (i, byte) in info.name.iter_mut().enumerate() {
             // Fill with printable ASCII: 'A' + (i % 26)
-            *byte = b'A' + (i % 26) as u8;
+            *byte = b'A' + u8::try_from(i % 26).unwrap_or(0);
         }
         info.name_len = 64;
         assert_eq!(info.name_str().len(), 64);

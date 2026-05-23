@@ -191,7 +191,8 @@ impl GpuBudget {
     /// Return the remaining transfer budget in bytes.
     #[must_use]
     pub const fn remaining_transfer(&self) -> u64 {
-        self.transfer_bytes_max.saturating_sub(self.transfer_bytes_used)
+        self.transfer_bytes_max
+            .saturating_sub(self.transfer_bytes_used)
     }
 
     /// Check whether all per-epoch budgets are exhausted.
@@ -255,7 +256,10 @@ mod tests {
     fn budget_denies_over_compute_limit() {
         let mut budget = GpuBudget::new(1000, 0, 0, 0);
         budget.record_compute(800).unwrap();
-        assert_eq!(budget.check_compute(201), Err(RvmError::ResourceLimitExceeded));
+        assert_eq!(
+            budget.check_compute(201),
+            Err(RvmError::ResourceLimitExceeded)
+        );
     }
 
     #[test]
@@ -263,7 +267,10 @@ mod tests {
         let mut budget = GpuBudget::new(0, 4096, 0, 0);
         assert!(budget.record_memory(2048).is_ok());
         assert!(budget.record_memory(2048).is_ok());
-        assert_eq!(budget.record_memory(1), Err(RvmError::ResourceLimitExceeded));
+        assert_eq!(
+            budget.record_memory(1),
+            Err(RvmError::ResourceLimitExceeded)
+        );
     }
 
     #[test]
@@ -271,7 +278,10 @@ mod tests {
         let mut budget = GpuBudget::new(0, 0, 1000, 0);
         assert!(budget.record_transfer(500).is_ok());
         assert!(budget.record_transfer(500).is_ok());
-        assert_eq!(budget.record_transfer(1), Err(RvmError::ResourceLimitExceeded));
+        assert_eq!(
+            budget.record_transfer(1),
+            Err(RvmError::ResourceLimitExceeded)
+        );
     }
 
     #[test]
@@ -303,7 +313,10 @@ mod tests {
 
         // Memory is NOT reset
         assert_eq!(budget.memory_bytes_used, 4096);
-        assert_eq!(budget.record_memory(1), Err(RvmError::ResourceLimitExceeded));
+        assert_eq!(
+            budget.record_memory(1),
+            Err(RvmError::ResourceLimitExceeded)
+        );
     }
 
     #[test]
@@ -318,7 +331,10 @@ mod tests {
     fn budget_overflow_protection() {
         let mut budget = GpuBudget::new(u64::MAX, u64::MAX, u64::MAX, u32::MAX);
         budget.record_compute(u64::MAX - 1).unwrap();
-        assert_eq!(budget.record_compute(2), Err(RvmError::ResourceLimitExceeded));
+        assert_eq!(
+            budget.record_compute(2),
+            Err(RvmError::ResourceLimitExceeded)
+        );
     }
 
     #[test]

@@ -23,7 +23,11 @@ mod tests {
 
     #[test]
     fn test_mode_variants() {
-        let modes = [SchedulerMode::Reflex, SchedulerMode::Flow, SchedulerMode::Recovery];
+        let modes = [
+            SchedulerMode::Reflex,
+            SchedulerMode::Flow,
+            SchedulerMode::Recovery,
+        ];
         assert_eq!(modes.len(), 3);
     }
 }
