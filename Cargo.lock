@@ -1768,7 +1768,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "rvm-benches"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "criterion",
  "rvm-cap",
@@ -1784,7 +1784,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-boot"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-hal",
  "rvm-memory",
@@ -1798,7 +1798,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-cap"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-types",
  "spin",
@@ -1806,7 +1806,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-coherence"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-partition",
  "rvm-sched",
@@ -1815,7 +1815,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-gpu"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cuda-rust-wasm",
  "rvm-types",
@@ -1823,14 +1823,14 @@ dependencies = [
 
 [[package]]
 name = "rvm-hal"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-types",
 ]
 
 [[package]]
 name = "rvm-kernel"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-boot",
  "rvm-cap",
@@ -1849,14 +1849,14 @@ dependencies = [
 
 [[package]]
 name = "rvm-memory"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-types",
 ]
 
 [[package]]
 name = "rvm-partition"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-cap",
  "rvm-types",
@@ -1866,7 +1866,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-proof"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ed25519-dalek",
  "hmac",
@@ -1880,7 +1880,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-sched"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-partition",
  "rvm-types",
@@ -1890,7 +1890,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-security"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-types",
  "rvm-witness",
@@ -1900,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-tests"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-boot",
  "rvm-cap",
@@ -1920,14 +1920,14 @@ dependencies = [
 
 [[package]]
 name = "rvm-types"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitflags 2.11.0",
 ]
 
 [[package]]
 name = "rvm-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rvm-cap",
  "rvm-partition",
@@ -1937,7 +1937,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-witness"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hmac",
  "rvm-types",

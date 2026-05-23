@@ -1,0 +1,18 @@
+# cargo-audit configuration for the RVM workspace.
+# See: https://github.com/rustsec/rustsec/tree/main/cargo-audit
+
+[advisories]
+# RUSTSEC-2024-0436: `paste` crate is unmaintained.
+# This is a *transitive* warning from a deeply nested optional dependency:
+#   rvm-gpu (optional cuda-rust-wasm feature) -> wgpu -> wgpu-hal -> metal -> paste
+# The workspace itself does not depend on `paste` and the GPU feature is
+# disabled by default (no `webgpu`/`metal` feature flag in any default build).
+# The `paste` crate has no known security vulnerability -- only maintenance
+# concerns. Suppressed until cuda-rust-wasm or wgpu ships a compatible release
+# that removes the metal -> paste dependency.
+ignore = ["RUSTSEC-2024-0436"]
+informational_warnings = ["unmaintained", "unsound", "notice"]
+
+[output]
+show_tree = true
+quiet = false
