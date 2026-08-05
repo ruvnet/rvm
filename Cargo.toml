@@ -11,7 +11,10 @@ members = [
     "crates/rvm-coherence",
     "crates/rvm-boot",
     "crates/rvm-wasm",
+    "crates/rvm-rvf",
     "crates/rvm-security",
+    "crates/rvm-host",
+    "crates/rvm-launch",
     "crates/rvm-gpu",
     "crates/rvm-kernel",
     "tests",
@@ -46,6 +49,9 @@ rvm-memory = { path = "crates/rvm-memory" }
 rvm-coherence = { path = "crates/rvm-coherence" }
 rvm-boot = { path = "crates/rvm-boot" }
 rvm-wasm = { path = "crates/rvm-wasm" }
+rvm-rvf = { path = "crates/rvm-rvf" }
+rvm-host = { path = "crates/rvm-host" }
+rvm-launch = { path = "crates/rvm-launch" }
 rvm-security = { path = "crates/rvm-security" }
 rvm-kernel = { path = "crates/rvm-kernel" }
 rvm-gpu = { path = "crates/rvm-gpu" }
@@ -54,7 +60,9 @@ rvm-gpu = { path = "crates/rvm-gpu" }
 lz4_flex = { version = "0.11", default-features = false }
 hmac = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false }
 subtle = { version = "2.6", default-features = false }
+xxhash-rust = { version = "0.8", default-features = false, features = ["xxh3"] }
 spin = { version = "0.9", default-features = false }
 bitflags = { version = "2", default-features = false }
 

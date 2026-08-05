@@ -1,0 +1,31 @@
+[package]
+name = "rvm-launch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Instance lifecycle for verified RVF agents: create, start, suspend, resume, checkpoint, terminate (ADR-289, ADR-288)"
+keywords = ["hypervisor", "lifecycle", "checkpoint", "no_std", "rvf"]
+categories = ["no-std", "embedded", "os"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+rvm-witness = { workspace = true }
+rvm-wasm = { workspace = true }
+rvm-rvf = { workspace = true }
+rvm-host = { workspace = true }
+
+[features]
+default = []
+std = [
+    "rvm-types/std",
+    "rvm-witness/std",
+    "rvm-wasm/std",
+    "rvm-rvf/std",
+    "rvm-host/std",
+]

@@ -1,0 +1,33 @@
+[package]
+name = "rvm-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Host adapters that place a verified RVF into an isolation context and report the isolation it actually obtained (ADR-289, ADR-285)"
+keywords = ["hypervisor", "isolation", "sandbox", "no_std", "rvf"]
+categories = ["no-std", "embedded", "os"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+rvm-types = { workspace = true }
+rvm-cap = { workspace = true }
+rvm-witness = { workspace = true }
+rvm-partition = { workspace = true }
+rvm-wasm = { workspace = true }
+rvm-rvf = { workspace = true }
+
+[features]
+default = []
+std = [
+    "rvm-types/std",
+    "rvm-cap/std",
+    "rvm-witness/std",
+    "rvm-partition/std",
+    "rvm-wasm/std",
+    "rvm-rvf/std",
+]
