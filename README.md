@@ -11,7 +11,7 @@
 
 ### **Agents don't fit in VMs. They need something that understands how they think.**
 
-> **945 tests. 14 crates. 6 GPU backends. Zero regressions.** RVM automatically detects new [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) releases, runs full verification with AI-powered discovery analysis, and publishes verified nightly builds. See [Releases](https://github.com/ruvnet/rvm/releases) | [User Guide](userguide/) | [pi.ruv.io](https://pi.ruv.io)
+> **945 tests. 15 crates. 6 GPU backends. Zero regressions.** RVM automatically detects new [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) releases, runs full verification with AI-powered discovery analysis, and publishes verified nightly builds. See [Releases](https://github.com/ruvnet/rvm/releases) | [User Guide](userguide/) | [pi.ruv.io](https://pi.ruv.io)
 
 > Part of the [RuVector](https://github.com/ruvnet/RuVector) ecosystem. Uses [RuVix](../../crates/ruvix/) kernel primitives and [RVF](../../crates/rvf/) package format. Designed for [Cognitum](https://cognitum.one) Seed, Appliance, and future chip targets.
 
@@ -180,6 +180,7 @@ Layer 0: Machine Entry (assembly, <500 LoC)
 | `rvm-security` | Unified security gate: capability check + proof verification + witness log |
 | `rvm-kernel` | Full integration: coherence engine, IPC→graph feeding, scheduler, split/merge, security gates, tier management |
 | `rvm-gpu` | GPU compute subsystem: device, context, kernel, buffer, queue, budget (optional, feature-gated) |
+| `rvm-rvf` | RVF loader for RVForge packages: manifest verification, per-segment verification, capability mapping, identity preservation ([ADR-155](docs/adr/ADR-155-rvf-execution-contract.md)) |
 
 ### Dependency Graph
 
@@ -721,6 +722,57 @@ The full [RuVector](https://github.com/ruvnet/RuVector) ecosystem is available v
 | Security review | [`ruvector/docs/adr/ADR-007-security-review-technical-debt.md`](ruvector/docs/adr/ADR-007-security-review-technical-debt.md) |
 | Architecture docs | [`ruvector/docs/architecture/`](ruvector/docs/architecture/) |
 | Benchmarks | [`ruvector/docs/benchmarks/`](ruvector/docs/benchmarks/) |
+
+---
+
+## RVForge Integration
+
+**One signed agent artifact, one identity, wherever it runs.**
+[RVForge](https://gist.github.com/ruvnet/d08d9c00e140f570fb896256dc7cb1f7)
+(`@ruvector/rvforge`) packages, verifies, signs, and publishes a canonical
+`.rvf` agent container; RVM is the execution side of that contract. This
+release lands the **loader** — `rvm-rvf` — which reads and verifies an RVForge
+package and maps its declared capabilities into `rvm-cap`, without executing
+any of its content.
+
+```
+agent.rvf ──[RVForge: pack · sign · publish]──→ registry + staged bundles
+     │
+     └──[rvm-rvf: verify → map capabilities → witness]──→ rvm-cap rights
+                                                          (execution backends: next phase)
+```
+
+**Implemented here (`rvm-rvf`)**
+
+| Property | How |
+|-----------|-----|
+| Identity preserved | `rvfIdentity` (SHA-256 of the canonical RVF) read and carried, never re-minted |
+| Verify before load | Root manifest verified before executable memory is allocated; every segment verified before it loads |
+| Inspection ≠ execution | Reading and verifying an RVF never executes its content — safe to point at hostile artifacts |
+| Nothing undeclared | 15 capability classes, default-deny, mapped total into `rvm-cap` |
+| Refusal, not degradation | An unsupported capability class is a witnessed refusal, never a silent partial start |
+| Auditable results | Every verification outcome — pass or fail — emits a witness record |
+| Policy-gated sizes | Segment size limits come from signed policy; `rvm-wasm`'s 1 MB `MAX_MODULE_SIZE` remains the executor-side backstop |
+
+**Not yet in this repo** — the runtime backends that turn a verified package
+into a running agent: `rvm-host` (per-OS adapters), `rvm-launch` (lifecycle
+CLI), `rvm-ffi`/`rvm-node` (embedding surfaces), and streaming WASM validation
+to replace the fixed module limit. Until those land, an RVForge package can be
+verified and capability-mapped on RVM, not executed by it. Hosted mode, when it
+arrives, is `os-sandbox+wasm` and is never described as bare-metal `partition`
+isolation.
+
+The `rvm-rvf` crate owns the boundary between the format and the machine —
+manifest reading, signature and hash verification, segment resolution, version
+rejection, capability mapping, and identity preservation. Forge consults the
+published [compatibility matrix](docs/rvforge-compatibility-matrix.json) and
+refuses to build combinations RVM has not validated; RVM independently refuses
+incompatible RVFs at load. Both gates are required — packages outlive matrix
+revisions.
+
+See [ADR-155](docs/adr/ADR-155-rvf-execution-contract.md) for the decision
+record and [RVForge Integration Map](docs/RVFORGE-INTEGRATION.md) for the
+crate-by-crate division of responsibility and roadmap.
 
 ---
 
