@@ -16,4 +16,5 @@ jobs:
       - run: cargo check
       - run: cargo test
       - run: cargo clippy -- -D warnings
+      - run: scripts/check-adr155-status.sh
       - run: cargo check --target aarch64-unknown-none -p rvm-hal --no-default-features

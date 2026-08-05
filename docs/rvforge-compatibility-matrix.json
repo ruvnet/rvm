@@ -2,7 +2,7 @@
   "canonicalSource": "ruvector/docs/research/rvf-forge/compatibility-matrix.json (github.com/ruvnet/RuVector)",
   "schemaVersion": 1,
   "description": "RVForge <-> RVM runtime compatibility matrix (ADR-291). Forge rejects build/package combinations absent from this matrix. Canonical copy; the CLI vendors this file at build time.",
-  "updated": "2026-08-03",
+  "updated": "2026-08-05",
   "runtimeProfiles": {
     "wasm": {
       "status": "supported",
@@ -17,9 +17,9 @@
       ]
     },
     "os-isolation+wasm": {
-      "status": "supported",
+      "status": "planned",
       "isolationClaim": "os-sandbox+wasm",
-      "note": "Hosted RVM: OS isolation plus WASM. MUST NOT be described as bare-metal isolation (ADR-285).",
+      "note": "Target profile. rvm-host currently models mechanism status but platform integrations do not yet apply or attest the OS controls (rvm#25). MUST NOT be described as implemented or as bare-metal isolation (ADR-285).",
       "stateSchemaVersions": [1],
       "witnessSchemaVersions": [1],
       "platforms": [
@@ -67,6 +67,6 @@
   "rvm": {
     "repo": "https://github.com/ruvnet/rvm",
     "rvmVersionMin": null,
-    "rvmVersionMinNote": "Populated when rvm-rvf ships a versioned RVF execution contract (ADR-284)."
+    "rvmVersionMinNote": "The contract constant exists in rvm-rvf; a minimum remains unpublished until an RVM release is validated against this matrix."
   }
 }

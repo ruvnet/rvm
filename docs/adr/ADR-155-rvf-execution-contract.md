@@ -22,10 +22,10 @@ than on a bare-metal appliance is not one portable agent, it is five agents that
 happen to share a filename.
 
 This ADR records the contract RVM commits to. It is **Accepted as a decision**;
-the implementation in this repository begins with the `rvm-rvf` loader
-(verification, capability mapping, witness emission) and does not yet include
-the execution backends (`rvm-host`, `rvm-launch`, `rvm-ffi`, `rvm-node`) that a
-complete quarantined runtime requires.
+the implementation in this repository includes an initial `rvm-rvf` loader and
+`rvm-host`/`rvm-launch` lifecycle surfaces. These are partial contract
+implementations, not evidence that every backend or acceptance criterion below
+is conformant.
 
 RVM is the execution side of that claim. ADR-149 already established RVF as the
 universal container format for RVM's own artifacts (boot images, dormant memory
@@ -266,17 +266,21 @@ copy is in RuVector at `docs/research/rvf-forge/compatibility-matrix.json`. The
 build provenance record names the matrix revision that admitted a build, so a
 past admission decision can be reconstructed.
 
-The current matrix marks `rvm-native` (bare-metal partition isolation, via the
-seven-phase measured boot of `rvm-boot`) and `linux-microvm` as **planned**, and
-`rvmVersionMin` as null pending `rvm-rvf` shipping a versioned execution
-contract. Landing this ADR's implementation is what populates those fields.
+The current matrix marks `os-isolation+wasm`, `rvm-native` (bare-metal partition
+isolation, via the seven-phase measured boot of `rvm-boot`), and
+`linux-microvm` as **planned**. `rvmVersionMin` remains null until a released
+RVM build is validated against the matrix; a source-level contract constant is
+not release evidence.
 
 ### 7. Hosted-Mode Isolation-Claim Honesty
 
-RVM running as an ordinary desktop process provides **operating-system isolation
-plus WASM**. It provides namespaces, cgroups, seccomp, and network namespaces on
-Linux; Job Objects and restricted tokens on Windows; App Sandbox, hardened
-runtime, and scoped entitlements on macOS.
+The target hosted profile is **operating-system isolation plus WASM**. The
+current `rvm-host` crate models these mechanisms and fails safely to
+`wasm-only`, but it does not apply or independently attest namespaces, cgroups,
+seccomp, Job Objects, restricted tokens, App Sandbox, hardened runtime, or
+entitlements. Platform-owned evidence is tracked in
+[rvm#25](https://github.com/ruvnet/rvm/issues/25); until it lands, the
+`os-isolation+wasm` matrix entry remains planned.
 
 It does **not** provide partition memory isolation, device leases, measured
 boot, or the hardware-backed trust that bare-metal RVM provides. The
@@ -292,6 +296,23 @@ every capability decision in section 3 advisory rather than enforced. Native
 extensions require a separate sandbox or an RVM partition.
 
 ### 8. Acceptance
+
+#### Current implementation status
+
+This table is delivery evidence, not part of the target contract. `Implemented`
+means code exists on `main`; it does not mean cross-platform or production
+validation. `Partial` cannot be used to advertise conformance.
+
+| Criterion | Status | Current evidence / remaining gate |
+|---|---|---|
+| 1 | Planned | No unchanged-artifact conformance run spans hosted Linux, Windows, macOS, QEMU, and bare metal. |
+| 2 | Planned | No cross-backend deterministic evaluation oracle exists. |
+| 3 | Partial | Default-deny mapping and adapter refusals exist; real hosted filesystem/network confinement awaits [rvm#25](https://github.com/ruvnet/rvm/issues/25). |
+| 4 | Planned | Lifecycle metadata crosses adapters, but guest state does not; see [rvm#24](https://github.com/ruvnet/rvm/issues/24). |
+| 5 | Implemented | RVF identity is retained by `VerifiedPackage` and checkpoint lineage checks. |
+| 6 | Planned | `rvm-launch::Checkpoint` explicitly carries metadata only; payload and witness-delta reconstruction are [rvm#24](https://github.com/ruvnet/rvm/issues/24). |
+| 7 | Partial | RVF content hashes are checked, while binding separately supplied runtime bytes is tracked in [rvm#19](https://github.com/ruvnet/rvm/issues/19). Policy/model/state end-to-end rejection is incomplete. |
+| 8 | Partial | Verification and lifecycle records are chained, but complete cross-backend witness coverage has not been demonstrated. |
 
 A release conforms only when one signed RVF:
 
