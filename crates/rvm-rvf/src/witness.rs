@@ -178,8 +178,8 @@ mod tests {
     fn a_skip_is_recorded_as_escalated_not_as_a_pass() {
         let kp = TestKeypair::deterministic(7);
         let mut data = manifest_only();
-        data.extend(signed_segment(SEG_TYPE_WASM, b"\0asm", 2, &kp));
-        // No trusted key, so the signature check skips.
+        data.extend(signed_segment(SEG_TYPE_META, b"metadata", 2, &kp));
+        // A non-executable signature with no trusted key remains informational.
         let report = verify(&data, &VerifyOptions::default()).unwrap();
 
         let skipped = report

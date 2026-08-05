@@ -152,8 +152,30 @@ fn a_signature_is_skipped_not_passed_when_no_key_is_trusted() {
         record_for(&report, CheckKind::Signature).detail,
         DetailCode::NoTrustedKey
     );
-    // A skip is not a failure, and the executable is signed, so this passes.
-    assert!(report.ok, "{:?}", report.failures());
+    // A distribution verifier without a trust anchor cannot establish who
+    // signed executable code. Preserve the precise diagnostic, but refuse to
+    // turn the incomplete check into an execution-eligible report.
+    assert!(!report.ok);
+}
+
+#[test]
+fn an_unsupported_executable_signature_algorithm_is_not_execution_eligible() {
+    let kp = TestKeypair::deterministic(8);
+    let mut data = manifest_only();
+    data.extend(signed_segment(SEG_TYPE_WASM, b"\0asm", 6, &kp));
+
+    let segments = crate::container::walk(&data).unwrap();
+    let footer = segments
+        .iter()
+        .find(|segment| segment.header.seg_type == SEG_TYPE_WASM)
+        .and_then(|segment| segment.footer.clone())
+        .unwrap();
+    data[footer.start..footer.start + 2].copy_from_slice(&99u16.to_le_bytes());
+
+    let report = verify(&data, &VerifyOptions::with_trusted_keys(vec![kp.public])).unwrap();
+    let signature = record_for(&report, CheckKind::Signature);
+    assert_eq!(signature.detail, DetailCode::UnsupportedSignatureAlgorithm);
+    assert!(!report.ok);
 }
 
 #[test]

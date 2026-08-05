@@ -153,8 +153,9 @@ impl VerificationReport {
 #[derive(Debug, Clone, Default)]
 pub struct VerifyOptions {
     /// Ed25519 public keys whose signatures are accepted. With none supplied,
-    /// signature checks are recorded as skipped rather than passed — an
-    /// unverifiable signature is never treated as a valid one.
+    /// non-executable signature checks are recorded as skipped rather than
+    /// passed. Executable signatures without a trust anchor fail strict
+    /// eligibility: unverifiable code is never treated as verified code.
     pub trusted_keys: Vec<[u8; 32]>,
     /// Permit executable segments with no signature. Off by default; exists
     /// for unsigned development builds, which are labeled as such and are not
@@ -395,7 +396,7 @@ fn signature_record(data: &[u8], seg: &ParsedSegment, opts: &VerifyOptions) -> V
     if footer.sig_algo != SIG_ALGO_ED25519 || footer.sig_length != ED25519_SIGNATURE_LENGTH {
         return segment_record(
             CheckKind::Signature,
-            Outcome::Skip,
+            signature_incomplete_outcome(seg),
             seg,
             DetailCode::UnsupportedSignatureAlgorithm,
         );
@@ -403,7 +404,7 @@ fn signature_record(data: &[u8], seg: &ParsedSegment, opts: &VerifyOptions) -> V
     if opts.trusted_keys.is_empty() {
         return segment_record(
             CheckKind::Signature,
-            Outcome::Skip,
+            signature_incomplete_outcome(seg),
             seg,
             DetailCode::NoTrustedKey,
         );
@@ -420,6 +421,18 @@ fn signature_record(data: &[u8], seg: &ParsedSegment, opts: &VerifyOptions) -> V
             DetailCode::SignatureRejected
         },
     )
+}
+
+/// Missing verifier support may remain informational for signed data, but it
+/// is a hard refusal for code. ADR-155 requires every executable segment to be
+/// authenticated before load; a signature footer alone proves no publisher
+/// identity.
+const fn signature_incomplete_outcome(seg: &ParsedSegment) -> Outcome {
+    if seg.is_executable() {
+        Outcome::Fail
+    } else {
+        Outcome::Skip
+    }
 }
 
 /// Whether any trusted key signed this segment.
