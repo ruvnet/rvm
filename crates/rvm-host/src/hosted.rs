@@ -166,10 +166,8 @@ impl HostAdapter for HostedAdapter {
 
     fn mechanisms(&self) -> MechanismSet {
         let stack = IsolationMechanism::stack_for(self.os);
-        let mut set = MechanismSet::new().with_all(
-            &IsolationMechanism::PORTABLE_CORE,
-            MechanismStatus::Engaged,
-        );
+        let mut set = MechanismSet::new()
+            .with_all(&IsolationMechanism::PORTABLE_CORE, MechanismStatus::Engaged);
         for (i, mechanism) in stack.iter().enumerate() {
             let status = if self.engaged[i] {
                 MechanismStatus::Engaged
@@ -240,8 +238,12 @@ mod tests {
             .engaging(IsolationMechanism::LinuxSeccomp)
             .unwrap();
         assert_eq!(adapter.isolation_claim(), IsolationClaim::OsSandboxWasm);
-        assert!(adapter.mechanisms().is_engaged(IsolationMechanism::LinuxSeccomp));
-        assert!(!adapter.mechanisms().is_engaged(IsolationMechanism::LinuxCgroups));
+        assert!(adapter
+            .mechanisms()
+            .is_engaged(IsolationMechanism::LinuxSeccomp));
+        assert!(!adapter
+            .mechanisms()
+            .is_engaged(IsolationMechanism::LinuxCgroups));
     }
 
     #[test]

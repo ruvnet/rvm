@@ -310,9 +310,7 @@ pub trait HostAdapter {
             partition_id: isolation.placement.partition,
             max_memory_pages: isolation.placement.max_memory_pages,
         };
-        let id = agents
-            .spawn(&config, log)
-            .map_err(HostError::SpawnFailed)?;
+        let id = agents.spawn(&config, log).map_err(HostError::SpawnFailed)?;
 
         emit(
             log,

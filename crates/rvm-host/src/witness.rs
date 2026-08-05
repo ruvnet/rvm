@@ -190,20 +190,35 @@ pub fn emit<const N: usize>(
 /// Returns `None` for records emitted by another subsystem, which is what
 /// makes an instance's own host decisions separable from everything else
 /// sharing the log.
+///
+/// The aux tag alone is not enough to identify one. Other layers write their
+/// own small integers into `aux[0]` — `rvm-launch` numbers its lifecycle
+/// events from 1 as well — so a tag-only reader would count a lifecycle record
+/// as a capability decision. Three things have to agree: the tag, the
+/// `ActionKind` that tag implies, and a non-zero isolation claim in `aux[2]`,
+/// which only a record from this module carries.
 #[must_use]
 pub const fn event_of(record: &WitnessRecord) -> Option<HostEvent> {
-    match record.aux[0] {
-        1 => Some(HostEvent::CapabilityGranted),
-        2 => Some(HostEvent::CapabilityDenied),
-        3 => Some(HostEvent::CapabilityRefused),
-        4 => Some(HostEvent::IsolationPrepared),
-        5 => Some(HostEvent::ModuleAdmitted),
-        6 => Some(HostEvent::ModuleRefused),
-        _ => None,
+    let tagged = match record.aux[0] {
+        1 => HostEvent::CapabilityGranted,
+        2 => HostEvent::CapabilityDenied,
+        3 => HostEvent::CapabilityRefused,
+        4 => HostEvent::IsolationPrepared,
+        5 => HostEvent::ModuleAdmitted,
+        6 => HostEvent::ModuleRefused,
+        _ => return None,
+    };
+    if record.action_kind == tagged.action_kind() as u8 && claim_of(record).is_some() {
+        Some(tagged)
+    } else {
+        None
     }
 }
 
 /// Read the isolation claim out of a record this module wrote.
+///
+/// Returns `None` when `aux[2]` holds no claim code, which is how a record
+/// from another layer is told apart from one of ours.
 #[must_use]
 pub const fn claim_of(record: &WitnessRecord) -> Option<IsolationClaim> {
     match record.aux[2] {
@@ -284,7 +299,12 @@ mod tests {
         let mut other = ctx(IsolationClaim::WasmOnly);
         other.rvf_identity = [9u8; 32];
 
-        let a = build_record(HostEvent::IsolationPrepared, &ctx(IsolationClaim::WasmOnly), None, 0);
+        let a = build_record(
+            HostEvent::IsolationPrepared,
+            &ctx(IsolationClaim::WasmOnly),
+            None,
+            0,
+        );
         let b = build_record(HostEvent::IsolationPrepared, &other, None, 0);
 
         assert_ne!(a.capability_hash, b.capability_hash);
@@ -294,7 +314,12 @@ mod tests {
 
     #[test]
     fn an_event_with_no_class_says_so_rather_than_naming_class_zero() {
-        let r = build_record(HostEvent::ModuleAdmitted, &ctx(IsolationClaim::WasmOnly), None, 0);
+        let r = build_record(
+            HostEvent::ModuleAdmitted,
+            &ctx(IsolationClaim::WasmOnly),
+            None,
+            0,
+        );
         assert_eq!(r.aux[1], NO_CLASS);
         assert_ne!(r.aux[1], CapabilityClass::Memory as u8);
         assert_eq!(r.target_object_id, 0);
@@ -338,6 +363,24 @@ mod tests {
     }
 
     #[test]
+    fn a_record_from_another_layer_is_not_read_as_a_host_event() {
+        // `rvm-wasm` writes agent transitions with an all-zero aux, and any
+        // layer numbering its own events from 1 collides with these tags. A
+        // reader that trusted aux[0] alone would count them as capability
+        // decisions, so the claim code has to be there too.
+        let mut foreign = WitnessRecord::zeroed();
+        foreign.action_kind = ActionKind::TaskSpawn as u8;
+        foreign.aux[0] = HostEvent::CapabilityDenied as u8;
+        assert_eq!(event_of(&foreign), None);
+
+        // Right tag, right action kind, no claim: still not ours.
+        foreign.action_kind = ActionKind::ProofRejected as u8;
+        assert_eq!(event_of(&foreign), None);
+        foreign.aux[2] = IsolationClaim::WasmOnly.witness_code();
+        assert_eq!(event_of(&foreign), Some(HostEvent::CapabilityDenied));
+    }
+
+    #[test]
     fn the_detail_word_survives_the_round_trip() {
         let r = build_record(
             HostEvent::ModuleRefused,
@@ -345,6 +388,9 @@ mod tests {
             None,
             0x0DED_BEEF,
         );
-        assert_eq!(u32::from_le_bytes(r.aux[4..8].try_into().unwrap()), 0x0DED_BEEF);
+        assert_eq!(
+            u32::from_le_bytes(r.aux[4..8].try_into().unwrap()),
+            0x0DED_BEEF
+        );
     }
 }

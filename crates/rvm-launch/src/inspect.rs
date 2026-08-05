@@ -173,7 +173,10 @@ mod tests {
         let mut data = testkit::container_declaring("memory");
         data[0..4].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
         assert_ne!(&data[0..4], &SEGMENT_MAGIC_BYTES);
-        assert_eq!(inspect(&data), Err(crate::LaunchError::Rvf(RvfError::BadMagic)));
+        assert_eq!(
+            inspect(&data),
+            Err(crate::LaunchError::Rvf(RvfError::BadMagic))
+        );
     }
 
     #[test]
@@ -211,6 +214,9 @@ mod tests {
         let inspected = inspect(&data).unwrap();
         let wasm = inspected.segments.iter().find(|s| s.executable).unwrap();
         assert_eq!(wasm.payload_bytes, testkit::MINIMAL_WASM.len() as u64);
-        assert_eq!(core::mem::size_of_val(wasm), core::mem::size_of::<SegmentSummary>());
+        assert_eq!(
+            core::mem::size_of_val(wasm),
+            core::mem::size_of::<SegmentSummary>()
+        );
     }
 }

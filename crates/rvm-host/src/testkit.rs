@@ -98,7 +98,11 @@ pub fn lenient_options() -> VerifyOptions {
 pub fn package(classes: &str) -> crate::VerifiedPackage {
     let data = container_with_wasm(classes);
     let report = rvm_rvf::verify(&data, &lenient_options()).expect("fixture is a valid container");
-    assert!(report.ok, "fixture failed verification: {:?}", report.failures());
+    assert!(
+        report.ok,
+        "fixture failed verification: {:?}",
+        report.failures()
+    );
     crate::VerifiedPackage::from_report(&report).expect("fixture verified")
 }
 

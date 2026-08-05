@@ -85,7 +85,7 @@ pub mod package;
 pub mod wasm;
 pub mod witness;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
 
 pub use adapter::{
@@ -215,7 +215,12 @@ mod tests {
         let mut agents = AgentManager::<4>::new();
 
         let iso = adapter
-            .prepare(&package, Placement::new(PartitionId::new(1), 0, 16), &log, 1)
+            .prepare(
+                &package,
+                Placement::new(PartitionId::new(1), 0, 16),
+                &log,
+                1,
+            )
             .unwrap();
         adapter
             .spawn(&iso, &testkit::MINIMAL_WASM, &mut agents, &log, 2)

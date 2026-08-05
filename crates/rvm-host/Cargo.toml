@@ -23,6 +23,10 @@ rvm-rvf = { workspace = true }
 
 [features]
 default = []
+# Synthetic RVF fixtures. Off by default and never enabled by `std`: it exists
+# so `rvm-launch` can build a container to drive a lifecycle test without
+# either crate reimplementing segment framing.
+testkit = []
 std = [
     "rvm-types/std",
     "rvm-cap/std",

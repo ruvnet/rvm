@@ -430,10 +430,8 @@ mod tests {
 
     #[test]
     fn a_mechanism_not_in_the_stack_has_no_status_at_all() {
-        let set = MechanismSet::new().with_all(
-            &IsolationMechanism::PORTABLE_CORE,
-            MechanismStatus::Engaged,
-        );
+        let set = MechanismSet::new()
+            .with_all(&IsolationMechanism::PORTABLE_CORE, MechanismStatus::Engaged);
         assert_eq!(set.status_of(IsolationMechanism::LinuxCgroups), None);
         assert!(!set.is_engaged(IsolationMechanism::LinuxCgroups));
     }
@@ -452,7 +450,8 @@ mod tests {
 
     #[test]
     fn os_confinement_is_detected_only_for_the_matching_os() {
-        let set = MechanismSet::new().with(IsolationMechanism::LinuxCgroups, MechanismStatus::Engaged);
+        let set =
+            MechanismSet::new().with(IsolationMechanism::LinuxCgroups, MechanismStatus::Engaged);
         assert!(set.any_os_confinement_engaged(HostOs::Linux));
         assert!(!set.any_os_confinement_engaged(HostOs::Windows));
         assert!(!set.any_os_confinement_engaged(HostOs::MacOs));
@@ -463,7 +462,11 @@ mod tests {
         let mut names: Vec<&str> = IsolationMechanism::PORTABLE_CORE
             .iter()
             .chain(IsolationMechanism::BARE_METAL_ONLY.iter())
-            .chain(HostOs::ALL.iter().flat_map(|os| IsolationMechanism::stack_for(*os)))
+            .chain(
+                HostOs::ALL
+                    .iter()
+                    .flat_map(|os| IsolationMechanism::stack_for(*os)),
+            )
             .map(|m| m.as_str())
             .collect();
         let total = names.len();

@@ -366,22 +366,22 @@ impl<A: HostAdapter> Instance<A> {
 
     /// The witness chain this instance produced, in sequence order.
     ///
-    /// Records are selected by the sequence spans this instance's operations
-    /// occupied, then filtered to those bound to its base RVF identity. That
-    /// separates instances of different artifacts sharing a log; to get an
-    /// exactly-scoped chain for two instances of the *same* artifact, give
-    /// each its own log, which is what ADR-289 criterion 8 ("export a complete
-    /// witness chain for the instance") assumes.
+    /// Selected by the sequence spans this instance's operations occupied, so
+    /// the result includes everything written inside them — the `rvm-host`
+    /// capability decisions, the `rvm-wasm` agent transitions, and this
+    /// crate's lifecycle records alike. Keeping the spans whole rather than
+    /// filtering by layer is what lets the result be *chain*-verified:
+    /// ADR-289 criterion 8 asks for a complete, cryptographically verifiable
+    /// chain, and a subset with holes in it would satisfy neither adjective.
     ///
-    /// A ring buffer that has wrapped past this instance's spans returns only
-    /// what survives, which is a property of the log's capacity rather than of
-    /// this method.
+    /// Two instances sharing a log occupy disjoint spans, so their chains do
+    /// not overlap. An instance whose own log has wrapped past its earliest
+    /// span gets back only what survives, which is a property of the log's
+    /// capacity rather than of this method.
     #[must_use]
     pub fn witness<const N: usize>(&self, log: &WitnessLog<N>) -> Vec<WitnessRecord> {
-        let tag = fnv1a_32(self.package.identity());
         let mut records: Vec<WitnessRecord> = (0..log.len())
             .filter_map(|i| log.get(i))
-            .filter(|r| r.capability_hash == tag)
             .filter(|r| {
                 self.ranges
                     .iter()
@@ -390,6 +390,17 @@ impl<A: HostAdapter> Instance<A> {
             .collect();
         records.sort_unstable_by_key(|r| r.sequence);
         records
+    }
+
+    /// Whether `record` is bound to this instance's base RVF.
+    ///
+    /// The binding is the FNV-1a fold of the container identity that
+    /// `rvm-rvf`, `rvm-host`, and this crate all write into
+    /// `capability_hash`, so it holds across every layer that touched the
+    /// artifact.
+    #[must_use]
+    pub fn binds_to_package(&self, record: &WitnessRecord) -> bool {
+        record.capability_hash == fnv1a_32(self.package.identity())
     }
 
     fn witness_context(&self, timestamp_ns: u64) -> LaunchWitnessContext {
@@ -431,3 +442,7 @@ impl<A: HostAdapter> Instance<A> {
 #[cfg(test)]
 #[path = "instance_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "instance_lineage_tests.rs"]
+mod lineage_tests;

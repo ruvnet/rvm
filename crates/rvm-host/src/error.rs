@@ -43,9 +43,14 @@ impl fmt::Display for HostError {
             Self::CapabilityUnenforceable(c) => {
                 write!(f, "adapter cannot enforce capability class {c}")
             }
-            Self::MechanismUnavailable(m) => write!(f, "required isolation mechanism {m} did not engage"),
+            Self::MechanismUnavailable(m) => {
+                write!(f, "required isolation mechanism {m} did not engage")
+            }
             Self::MechanismNotInStack(m) => {
-                write!(f, "isolation mechanism {m} is not part of this adapter's stack")
+                write!(
+                    f,
+                    "isolation mechanism {m} is not part of this adapter's stack"
+                )
             }
             Self::ModuleTooLarge => f.write_str("module exceeds the adapter's maximum size"),
             Self::ModuleRejected(_) => f.write_str("module is not a well-formed WASM module"),

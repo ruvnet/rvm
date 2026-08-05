@@ -231,10 +231,7 @@ mod tests {
     use rvm_partition::PartitionType;
 
     fn core() -> MechanismSet {
-        MechanismSet::new().with_all(
-            &IsolationMechanism::PORTABLE_CORE,
-            MechanismStatus::Engaged,
-        )
+        MechanismSet::new().with_all(&IsolationMechanism::PORTABLE_CORE, MechanismStatus::Engaged)
     }
 
     fn live_partition() -> (PartitionManager, PartitionId) {
@@ -271,7 +268,10 @@ mod tests {
     fn hosted_with_an_engaged_os_mechanism_claims_os_sandbox_wasm() {
         let env = HostEnvironment::hosted(HostOs::Linux);
         let set = core().with(IsolationMechanism::LinuxSeccomp, MechanismStatus::Engaged);
-        assert_eq!(IsolationClaim::derive(env, &set), IsolationClaim::OsSandboxWasm);
+        assert_eq!(
+            IsolationClaim::derive(env, &set),
+            IsolationClaim::OsSandboxWasm
+        );
     }
 
     #[test]
@@ -295,7 +295,10 @@ mod tests {
     #[test]
     fn portable_is_always_wasm_only() {
         let env = HostEnvironment::portable();
-        assert_eq!(IsolationClaim::derive(env, &core()), IsolationClaim::WasmOnly);
+        assert_eq!(
+            IsolationClaim::derive(env, &core()),
+            IsolationClaim::WasmOnly
+        );
         assert_eq!(
             IsolationClaim::derive(
                 env,
@@ -322,7 +325,10 @@ mod tests {
         let (mgr, id) = live_partition();
         let evidence = PartitionEvidence::from_manager(&mgr, id).unwrap();
         let env = HostEnvironment::bare_metal(evidence);
-        assert_eq!(IsolationClaim::derive(env, &core()), IsolationClaim::Partition);
+        assert_eq!(
+            IsolationClaim::derive(env, &core()),
+            IsolationClaim::Partition
+        );
         assert_eq!(env.partition(), Some(id));
         assert!(env.is_bare_metal());
         assert!(!env.is_hosted());

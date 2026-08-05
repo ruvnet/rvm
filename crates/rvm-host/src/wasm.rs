@@ -87,10 +87,7 @@ impl HostAdapter for WasmAdapter {
     }
 
     fn mechanisms(&self) -> MechanismSet {
-        MechanismSet::new().with_all(
-            &IsolationMechanism::PORTABLE_CORE,
-            MechanismStatus::Engaged,
-        )
+        MechanismSet::new().with_all(&IsolationMechanism::PORTABLE_CORE, MechanismStatus::Engaged)
     }
 
     fn enforces(&self, class: CapabilityClass) -> bool {

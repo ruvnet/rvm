@@ -20,6 +20,9 @@ rvm-wasm = { workspace = true }
 rvm-rvf = { workspace = true }
 rvm-host = { workspace = true }
 
+[dev-dependencies]
+rvm-host = { workspace = true, features = ["testkit"] }
+
 [features]
 default = []
 std = [

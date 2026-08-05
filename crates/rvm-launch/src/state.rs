@@ -235,7 +235,10 @@ mod tests {
         assert!(!is_legal(InstanceState::Created, LifecycleOp::Checkpoint));
         assert!(is_legal(InstanceState::Running, LifecycleOp::Checkpoint));
         assert!(is_legal(InstanceState::Suspended, LifecycleOp::Checkpoint));
-        assert!(!is_legal(InstanceState::Terminated, LifecycleOp::Checkpoint));
+        assert!(!is_legal(
+            InstanceState::Terminated,
+            LifecycleOp::Checkpoint
+        ));
     }
 
     #[test]

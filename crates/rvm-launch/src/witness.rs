@@ -194,7 +194,8 @@ pub const fn event_of(record: &WitnessRecord) -> Option<LaunchEvent> {
         9 => LaunchEvent::IllegalTransition,
         _ => return None,
     };
-    if record.action_kind == tagged.action_kind() as u8 && record.aux[2] == 0 && record.aux[3] == 0 {
+    if record.action_kind == tagged.action_kind() as u8 && record.aux[2] == 0 && record.aux[3] == 0
+    {
         Some(tagged)
     } else {
         None
@@ -243,9 +244,11 @@ mod tests {
     }
 
     #[test]
-    fn launch_records_are_not_mistaken_for_host_records() {
-        // A host record uses the same aux[0] space but sets aux[2] to the
-        // isolation-claim code, which a launch record never does.
+    fn no_launch_record_is_ever_read_as_a_host_record_or_the_reverse() {
+        // Both layers number their events from 1, so `aux[0]` collides across
+        // the whole overlapping range. Reading a lifecycle record as a
+        // capability decision would silently inflate an audit of capability
+        // grants, so every pairing is checked rather than a representative one.
         let host_ctx = rvm_host::HostWitnessContext::new(
             [3u8; 32],
             PartitionId::new(1),
@@ -253,17 +256,33 @@ mod tests {
             rvm_host::IsolationClaim::WasmOnly,
             0,
         );
-        let host = rvm_host::build_record(rvm_host::HostEvent::CapabilityGranted, &host_ctx, None, 0);
-        assert!(rvm_host::event_of(&host).is_some());
-        assert_eq!(event_of(&host), None);
 
-        let launch = build_record(
-            LaunchEvent::InstanceCreated,
-            &ctx(),
-            InstanceState::Created,
-            0,
-        );
-        assert_eq!(rvm_host::claim_of(&launch), None);
+        for event in LaunchEvent::ALL {
+            let r = build_record(event, &ctx(), InstanceState::Running, 0);
+            assert_eq!(event_of(&r), Some(event));
+            assert_eq!(
+                rvm_host::event_of(&r),
+                None,
+                "{event:?} read as a host event"
+            );
+            assert_eq!(rvm_host::claim_of(&r), None);
+        }
+
+        for event in rvm_host::HostEvent::ALL {
+            let r = rvm_host::build_record(event, &host_ctx, None, 0);
+            assert_eq!(rvm_host::event_of(&r), Some(event));
+            assert_eq!(event_of(&r), None, "{event:?} read as a launch event");
+        }
+    }
+
+    #[test]
+    fn an_agent_record_from_rvm_wasm_belongs_to_neither_layer() {
+        // `rvm-wasm` emits its own transition records into the same log with
+        // an all-zero aux; they are neither layer's to interpret.
+        let mut agent = WitnessRecord::zeroed();
+        agent.action_kind = ActionKind::TaskSpawn as u8;
+        assert_eq!(event_of(&agent), None);
+        assert_eq!(rvm_host::event_of(&agent), None);
     }
 
     #[test]
@@ -277,12 +296,7 @@ mod tests {
     #[test]
     fn an_illegal_transition_records_which_operation_was_attempted() {
         let log = WitnessLog::<8>::new();
-        emit_illegal(
-            &log,
-            &ctx(),
-            InstanceState::Terminated,
-            LifecycleOp::Resume,
-        );
+        emit_illegal(&log, &ctx(), InstanceState::Terminated, LifecycleOp::Resume);
         let r = log.get(0).unwrap();
         assert_eq!(event_of(&r), Some(LaunchEvent::IllegalTransition));
         assert_eq!(r.aux[1], InstanceState::Terminated as u8);
@@ -296,8 +310,18 @@ mod tests {
     fn records_bind_to_the_base_artifact() {
         let mut other = ctx();
         other.rvf_identity = [4u8; 32];
-        let a = build_record(LaunchEvent::CheckpointTaken, &ctx(), InstanceState::Running, 0);
-        let b = build_record(LaunchEvent::CheckpointTaken, &other, InstanceState::Running, 0);
+        let a = build_record(
+            LaunchEvent::CheckpointTaken,
+            &ctx(),
+            InstanceState::Running,
+            0,
+        );
+        let b = build_record(
+            LaunchEvent::CheckpointTaken,
+            &other,
+            InstanceState::Running,
+            0,
+        );
         assert_ne!(a.capability_hash, b.capability_hash);
         assert_ne!(a.payload, b.payload);
     }

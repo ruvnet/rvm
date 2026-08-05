@@ -58,10 +58,7 @@ impl HostAdapter for BareMetalAdapter {
 
     fn mechanisms(&self) -> MechanismSet {
         MechanismSet::new()
-            .with_all(
-                &IsolationMechanism::PORTABLE_CORE,
-                MechanismStatus::Engaged,
-            )
+            .with_all(&IsolationMechanism::PORTABLE_CORE, MechanismStatus::Engaged)
             .with_all(
                 &IsolationMechanism::BARE_METAL_ONLY,
                 MechanismStatus::Engaged,
