@@ -10,22 +10,24 @@
 //! because there is no unverified value to pass.
 
 use alloc::vec::Vec;
-use rvm_rvf::{CapabilityClass, CapabilityMapping, VerificationReport};
+use rvm_rvf::{
+    format::SEG_TYPE_WASM, CapabilityClass, CapabilityMapping, VerificationReport,
+    VerifiedExecutable,
+};
 
 use crate::error::{HostError, HostResult};
 
 /// An RVF that passed every verification check, with the capability mapping it
 /// resolved to.
 ///
-/// Holds no container bytes: verification is complete by the time this exists,
-/// and the payload a runtime will later execute is passed separately and
-/// explicitly, so that "I hold a verified package" never silently means "I
-/// hold runnable code".
+/// Holds no container bytes, but retains each executable payload's identity so
+/// separately supplied runtime bytes can be bound back to what was verified.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedPackage {
     identity: [u8; 32],
     byte_length: u64,
     segment_count: usize,
+    executables: Vec<VerifiedExecutable>,
     capabilities: CapabilityMapping,
 }
 
@@ -45,6 +47,7 @@ impl VerifiedPackage {
             identity: report.rvf_identity,
             byte_length: report.byte_length,
             segment_count: report.segment_count,
+            executables: report.executables.clone(),
             capabilities: report.capabilities.clone(),
         })
     }
@@ -74,6 +77,14 @@ impl VerifiedPackage {
     #[must_use]
     pub const fn capabilities(&self) -> &CapabilityMapping {
         &self.capabilities
+    }
+
+    /// Whether `module` exactly matches a WASM payload in this package.
+    #[must_use]
+    pub fn accepts_wasm(&self, module: &[u8]) -> bool {
+        self.executables
+            .iter()
+            .any(|entry| entry.segment_type == SEG_TYPE_WASM && entry.matches(module))
     }
 
     /// The classes this package declared and RVM will issue.
@@ -150,6 +161,19 @@ mod tests {
     }
 
     #[test]
+    fn executable_bytes_are_bound_to_the_verified_segment_identity() {
+        let data = testkit::container_with_wasm("memory");
+        let report = verify(&data, &testkit::lenient_options()).unwrap();
+        let pkg = VerifiedPackage::from_report(&report).unwrap();
+        let substitute = [
+            0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+        ];
+
+        assert!(pkg.accepts_wasm(&testkit::MINIMAL_WASM));
+        assert!(!pkg.accepts_wasm(&substitute));
+    }
+
+    #[test]
     fn granted_classes_come_back_in_declaration_order() {
         let data = testkit::container_declaring("clock,memory,model");
         let report = verify(&data, &testkit::lenient_options()).unwrap();
@@ -169,7 +193,7 @@ mod tests {
         let data = testkit::container_declaring("memory");
         let report = verify(&data, &testkit::lenient_options()).unwrap();
         let pkg = VerifiedPackage::from_report(&report).unwrap();
-        // The identity is retained; the payload is not, so holding a package
+        // Identities are retained; payload bytes are not, so holding a package
         // is never the same as holding runnable code.
         assert_eq!(pkg.byte_length(), data.len() as u64);
         assert_eq!(core::mem::size_of_val(pkg.identity()), 32);

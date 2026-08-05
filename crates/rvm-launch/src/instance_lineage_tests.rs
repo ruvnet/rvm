@@ -13,6 +13,9 @@ use rvm_types::PartitionId;
 const PLACEMENT: Placement = Placement::new(PartitionId::new(1), 0, 16);
 type Log = WitnessLog<512>;
 type Agents = AgentManager<8>;
+const SUBSTITUTE_WASM: [u8; 11] = [
+    0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+];
 
 // ---------------------------------------------------------------------
 // Checkpoint lineage
@@ -166,6 +169,33 @@ fn a_checkpoint_resumes_into_a_new_instance_of_the_same_lineage() {
     assert!(second.agent().is_some());
     // The two runs obtained different, honestly reported boundaries.
     assert_eq!(second.isolation().claim, IsolationClaim::OsSandboxWasm);
+}
+
+#[test]
+fn a_created_restore_refuses_module_bytes_not_bound_to_the_package() {
+    let log = Log::new();
+    let mut agents = Agents::new();
+    let mut inst = instance(&log);
+    let checkpoint = Checkpoint::new(
+        *inst.package().identity(),
+        InstanceId::new(99),
+        0,
+        InstanceState::Suspended,
+        16,
+        0,
+    );
+
+    assert_eq!(
+        inst.restore(&checkpoint, &SUBSTITUTE_WASM, &mut agents, &log, 2),
+        Err(LaunchError::ExecutableMismatch)
+    );
+    assert_eq!(inst.state(), InstanceState::Created);
+    assert_eq!(inst.agent(), None);
+    assert_eq!(agents.count(), 0);
+    assert_eq!(
+        events(&inst, &log).last(),
+        Some(&LaunchEvent::ExecutableRejected)
+    );
 }
 
 #[test]

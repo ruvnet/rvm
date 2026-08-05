@@ -147,6 +147,7 @@ impl<A: HostAdapter> Instance<A> {
     ) -> LaunchResult<()> {
         self.guard(LifecycleOp::Start, log, timestamp_ns)?;
         let start = log.total_emitted();
+        self.guard_executable(module, log, timestamp_ns, start)?;
 
         let agent = self
             .adapter
@@ -305,6 +306,10 @@ impl<A: HostAdapter> Instance<A> {
         }
         self.guard(LifecycleOp::Restore, log, timestamp_ns)?;
 
+        if self.state == InstanceState::Created {
+            self.guard_executable(module, log, timestamp_ns, start)?;
+        }
+
         match self.state {
             InstanceState::Created => {
                 let agent =
@@ -436,6 +441,27 @@ impl<A: HostAdapter> Instance<A> {
         if end > start {
             self.ranges.push((start, end));
         }
+    }
+
+    fn guard_executable<const N: usize>(
+        &mut self,
+        module: &[u8],
+        log: &WitnessLog<N>,
+        timestamp_ns: u64,
+        start: u64,
+    ) -> LaunchResult<()> {
+        if self.package.accepts_wasm(module) {
+            return Ok(());
+        }
+        emit(
+            log,
+            LaunchEvent::ExecutableRejected,
+            &self.witness_context(timestamp_ns),
+            self.state,
+            fnv1a_32(module),
+        );
+        self.record_range(start, log.total_emitted());
+        Err(LaunchError::ExecutableMismatch)
     }
 }
 

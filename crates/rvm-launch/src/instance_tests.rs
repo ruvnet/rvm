@@ -8,6 +8,9 @@ use rvm_rvf::CapabilityClass;
 use rvm_types::PartitionId;
 
 const PLACEMENT: Placement = Placement::new(PartitionId::new(1), 0, 16);
+const SUBSTITUTE_WASM: [u8; 11] = [
+    0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+];
 type Log = WitnessLog<512>;
 type Agents = AgentManager<8>;
 
@@ -146,20 +149,50 @@ fn the_full_lifecycle_runs_end_to_end() {
 fn a_module_that_fails_admission_leaves_the_instance_created() {
     let log = Log::new();
     let mut agents = Agents::new();
-    let mut inst = instance(&log);
+    let malformed = b"not wasm";
+    let data = rvm_host::testkit::container_with_module("memory,clock", malformed);
+    let report = rvm_rvf::verify(&data, &rvm_host::testkit::lenient_options()).unwrap();
+    let package = VerifiedPackage::from_report(&report).unwrap();
+    let mut inst = Instance::create(
+        InstanceId::new(1),
+        WasmAdapter::new(),
+        package,
+        PLACEMENT,
+        &log,
+        1,
+    )
+    .unwrap();
 
     assert!(matches!(
-        inst.start(b"not wasm", &mut agents, &log, 2),
+        inst.start(malformed, &mut agents, &log, 2),
         Err(LaunchError::Host(HostError::ModuleRejected(_)))
     ));
     assert_eq!(inst.state(), InstanceState::Created);
     assert_eq!(inst.agent(), None);
     assert_eq!(agents.count(), 0);
 
-    // And the instance is still startable with a module that does pass.
-    inst.start(&rvm_host::testkit::MINIMAL_WASM, &mut agents, &log, 3)
-        .unwrap();
-    assert_eq!(inst.state(), InstanceState::Running);
+    // Verification established byte identity, not WASM validity; runtime
+    // admission remains a distinct gate and the refusal is non-mutating.
+    assert_eq!(inst.state(), InstanceState::Created);
+}
+
+#[test]
+fn a_valid_but_unverified_module_is_refused_before_admission() {
+    let log = Log::new();
+    let mut agents = Agents::new();
+    let mut inst = instance(&log);
+
+    assert_eq!(
+        inst.start(&SUBSTITUTE_WASM, &mut agents, &log, 2),
+        Err(LaunchError::ExecutableMismatch)
+    );
+    assert_eq!(inst.state(), InstanceState::Created);
+    assert_eq!(inst.agent(), None);
+    assert_eq!(agents.count(), 0);
+    assert_eq!(
+        events(&inst, &log).last(),
+        Some(&LaunchEvent::ExecutableRejected)
+    );
 }
 
 // ---------------------------------------------------------------------
