@@ -181,6 +181,8 @@ Layer 0: Machine Entry (assembly, <500 LoC)
 | `rvm-kernel` | Full integration: coherence engine, IPC→graph feeding, scheduler, split/merge, security gates, tier management |
 | `rvm-gpu` | GPU compute subsystem: device, context, kernel, buffer, queue, budget (optional, feature-gated) |
 | `rvm-rvf` | RVF loader for RVForge packages: manifest verification, per-segment verification, capability mapping, identity preservation ([ADR-155](docs/adr/ADR-155-rvf-execution-contract.md)) |
+| `rvm-host` | Per-OS adapters and isolation mechanisms: picks the strongest available isolation, places the agent, spawns it |
+| `rvm-launch` | Instance lifecycle over the adapters: `inspect`, `verify`, run, suspend, resume, checkpoint, witness, terminate ([ADR-289](https://github.com/ruvnet/RuVector/tree/main/docs/adr)) |
 
 ### Dependency Graph
 
@@ -728,39 +730,45 @@ The full [RuVector](https://github.com/ruvnet/RuVector) ecosystem is available v
 ## RVForge Integration
 
 **One signed agent artifact, one identity, wherever it runs.**
-[RVForge](https://gist.github.com/ruvnet/d08d9c00e140f570fb896256dc7cb1f7)
-(`@ruvector/rvforge`) packages, verifies, signs, and publishes a canonical
-`.rvf` agent container; RVM is the execution side of that contract. This
-release lands the **loader** — `rvm-rvf` — which reads and verifies an RVForge
-package and maps its declared capabilities into `rvm-cap`, without executing
-any of its content.
+[RVForge](https://ruvnet.github.io/RuVector/rvforge/) (`@ruvector/rvforge`)
+authors, verifies, signs, and publishes a canonical `.rvf` agent container;
+RVM is the execution side of that contract. An illustrated walkthrough of the
+whole path — authoring a signed artifact through running it under the
+capability gate — is at
+<https://ruvnet.github.io/RuVector/rvforge/>.
+
+Three crates carry that contract here: `rvm-rvf` verifies the package and maps
+its capabilities, `rvm-host` decides what it runs inside, and `rvm-launch`
+drives one execution through its lifecycle.
 
 ```
-agent.rvf ──[RVForge: pack · sign · publish]──→ registry + staged bundles
+agent.rvf ──[RVForge: author · sign · publish]──→ registry + bundles
      │
-     └──[rvm-rvf: verify → map capabilities → witness]──→ rvm-cap rights
-                                                          (execution backends: next phase)
+     ├──[rvm-rvf:    verify → map capabilities → witness]──→ rvm-cap rights
+     ├──[rvm-host:   pick isolation → place → spawn]
+     └──[rvm-launch: run · suspend · resume · checkpoint · terminate]
 ```
 
-**Implemented here (`rvm-rvf`)**
+**Implemented here**
 
 | Property | How |
 |-----------|-----|
 | Identity preserved | `rvfIdentity` (SHA-256 of the canonical RVF) read and carried, never re-minted |
 | Verify before load | Root manifest verified before executable memory is allocated; every segment verified before it loads |
-| Inspection ≠ execution | Reading and verifying an RVF never executes its content — safe to point at hostile artifacts |
+| Nothing runs unverified | `Instance::create` takes a `VerifiedPackage` whose only constructor rejects a failed report — there is no path from a failed verify to a running instance |
+| Inspection ≠ execution | `inspect` and `verify` read headers, hash payloads and check signatures without mapping a segment or resolving an entry point — safe to point at hostile artifacts |
 | Nothing undeclared | 15 capability classes, default-deny, mapped total into `rvm-cap` |
 | Refusal, not degradation | An unsupported capability class is a witnessed refusal, never a silent partial start |
+| Illegal transitions are errors | The lifecycle state machine permits nothing outside its table, and each refusal is witnessed before it is returned |
+| State binds to lineage | A checkpoint carries the base RVF identity it was produced under; restoring against a different base is refused (ADR-288 §4) |
 | Auditable results | Every verification outcome — pass or fail — emits a witness record |
 | Policy-gated sizes | Segment size limits come from signed policy; `rvm-wasm`'s 1 MB `MAX_MODULE_SIZE` remains the executor-side backstop |
 
-**Not yet in this repo** — the runtime backends that turn a verified package
-into a running agent: `rvm-host` (per-OS adapters), `rvm-launch` (lifecycle
-CLI), `rvm-ffi`/`rvm-node` (embedding surfaces), and streaming WASM validation
-to replace the fixed module limit. Until those land, an RVForge package can be
-verified and capability-mapped on RVM, not executed by it. Hosted mode, when it
-arrives, is `os-sandbox+wasm` and is never described as bare-metal `partition`
-isolation.
+**Not yet in this repo** — `rvm-ffi` and `rvm-node` (the embedding surfaces
+that let Tauri and `@ruvector/rvforge` drive RVM directly), and streaming WASM
+validation to replace the fixed module limit. Bare-metal outputs
+(`Agent.rvm.img` and friends) remain roadmap. Hosted mode is
+`os-sandbox+wasm` and is never described as bare-metal `partition` isolation.
 
 The `rvm-rvf` crate owns the boundary between the format and the machine —
 manifest reading, signature and hash verification, segment resolution, version

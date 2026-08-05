@@ -32,9 +32,9 @@ broken.
 
 | | |
 |---|---|
-| **npm package** | `@ruvector/rvforge@0.1.0` |
+| **npm package** | `@ruvector/rvforge@0.2.0` |
 | **Source** | RuVector PR #790 (merged, `cbf9f6d7b`) |
-| **Overview** | [RVForge gist](https://gist.github.com/ruvnet/d08d9c00e140f570fb896256dc7cb1f7) |
+| **Overview** | [RVForge walkthrough](https://ruvnet.github.io/RuVector/rvforge/) |
 | **Canonical input** | one signed `.rvf` |
 | **Outputs today** | verified staged bundles, signed registry releases, provenance + witness receipts |
 | **Outputs next phase** | native signed installers per platform, hosted build fleet |
@@ -66,7 +66,7 @@ required.
 
 | Crate | Status | Role |
 |---|---|---|
-| `rvm-rvf` | **new** | The format/machine boundary: manifest reading, signature and hash verification, segment resolution, version rejection, capability mapping, identity preservation |
+| `rvm-rvf` | landed | The format/machine boundary: manifest reading, signature and hash verification, segment resolution, version rejection, capability mapping, identity preservation |
 | `rvm-cap` | existing | Capability tables and the seven rights; receives the mapped RVF policy |
 | `rvm-witness` | existing | 64-byte hash-chained records for every verification result, capability grant, and capability denial |
 | `rvm-wasm` | existing | WASM guest runtime; carries `MAX_MODULE_SIZE` as the executor backstop until streaming validation lands |
@@ -130,7 +130,7 @@ it and rejects absent combinations before allocating a build worker.
 | `wasm` | `wasm-sandbox` | supported |
 | `os-isolation+wasm` | `os-sandbox+wasm` | supported |
 | `linux-microvm` | `microvm` | planned |
-| `rvm-native` | `partition` | planned — blocked on `rvm-rvf` / `rvm-host` landing here |
+| `rvm-native` | `partition` | planned — `rvm-rvf` and `rvm-host` have landed; bare-metal execution is the remaining piece |
 
 Selection order is strongest-compatible-first (`rvm-native`,
 `os-isolation+wasm`, `wasm`, `linux-microvm`), changeable only by signed policy.
@@ -161,10 +161,10 @@ Every backend, and every tool that opens an RVF:
 
 | Item | Reference | Notes |
 |---|---|---|
-| `rvm-rvf` | ADR-155 | The loader; in progress on `feat/rvforge-integration` |
+| `rvm-rvf` | ADR-155 | **Landed** — the loader (v1.6.0) |
 | Streaming WASM validation | RuVector ADR-287 | Replaces `MAX_MODULE_SIZE` with incremental validation under signed policy; Component Model and WIT import reconciliation land with it |
-| `rvm-host` | RuVector ADR-289 | Per-OS adapters: Windows, macOS, Linux, browser, QEMU, bare metal |
-| `rvm-launch` | RuVector ADR-289 | `inspect`, `verify`, `run`, `suspend`, `resume`, `checkpoint`, `witness`, `terminate` |
+| `rvm-host` | RuVector ADR-289 | **Landed** — per-OS adapters and isolation mechanisms |
+| `rvm-launch` | RuVector ADR-289 | **Landed** — `inspect`, `verify`, run, suspend, resume, checkpoint, witness, terminate |
 | `rvm-ffi` | RuVector ADR-289 | Stable C interface for Tauri and other native hosts |
 | `rvm-node` | RuVector ADR-289 | Node bindings consumed by `@ruvector/rvforge` |
 | `rvm-policy` | RuVector ADR-284 | Signed size and capability policy enforcement |
