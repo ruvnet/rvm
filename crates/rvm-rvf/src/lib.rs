@@ -118,7 +118,8 @@ pub use format::{
 pub use hash::{content_hash, sha256, verify_content_hash};
 pub use policy::{tally, SizePolicy, SizeTally, SizeViolation};
 pub use verify::{
-    verify, CheckKind, Outcome, VerificationRecord, VerificationReport, VerifyOptions,
+    verify, CheckKind, Outcome, VerificationRecord, VerificationReport, VerifiedExecutable,
+    VerifyOptions,
 };
 pub use witness::{action_kind_for, build_record, emit_record, emit_report, WitnessContext};
 

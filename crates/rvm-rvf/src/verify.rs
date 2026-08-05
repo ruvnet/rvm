@@ -77,6 +77,27 @@ pub struct VerificationRecord {
     pub detail: DetailCode,
 }
 
+/// Identity of executable payload bytes examined during RVF verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerifiedExecutable {
+    /// Ordinal assigned by the RVF writer.
+    pub segment_id: u64,
+    /// RVF segment type discriminator.
+    pub segment_type: u8,
+    /// Exact executable payload length.
+    pub byte_length: u64,
+    /// SHA-256 of the executable payload bytes.
+    pub sha256: [u8; 32],
+}
+
+impl VerifiedExecutable {
+    /// Whether `module` is exactly the payload represented by this identity.
+    #[must_use]
+    pub fn matches(&self, module: &[u8]) -> bool {
+        self.byte_length == module.len() as u64 && self.sha256 == sha256(module)
+    }
+}
+
 /// The full result of verifying one artifact.
 ///
 /// Carries no timestamp: two verifications of the same bytes under the same
@@ -92,6 +113,9 @@ pub struct VerificationReport {
     pub ok: bool,
     /// How many segments were examined.
     pub segment_count: usize,
+    /// Executable payload identities retained for verify-before-load binding.
+    /// They become execution-eligible only when [`Self::ok`] is true.
+    pub executables: Vec<VerifiedExecutable>,
     /// One record per check performed, in check order.
     pub records: Vec<VerificationRecord>,
     /// The default-deny capability mapping this artifact resolves to.
@@ -250,11 +274,22 @@ pub fn verify(data: &[u8], opts: &VerifyOptions) -> RvfResult<VerificationReport
     }
 
     let ok = !records.iter().any(|r| r.outcome == Outcome::Fail);
+    let executables = segments
+        .iter()
+        .filter(|seg| seg.is_executable())
+        .map(|seg| VerifiedExecutable {
+            segment_id: seg.header.segment_id,
+            segment_type: seg.header.seg_type,
+            byte_length: seg.header.payload_length,
+            sha256: sha256(seg.payload(data)),
+        })
+        .collect();
     Ok(VerificationReport {
         rvf_identity: identity,
         byte_length: data.len() as u64,
         ok,
         segment_count: segments.len(),
+        executables,
         records,
         capabilities,
         size_violations,

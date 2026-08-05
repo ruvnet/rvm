@@ -2,6 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2026-08-05
+**Updated**: 2026-08-05 — runtime module bytes are matched against verified executable-segment identities before start or created-state restore (rvm#19).
 **Authors**: Claude Code
 **Supersedes**: None
 **Related**: ADR-132 (Hypervisor Core), ADR-134 (Witness Schema), ADR-135 (Proof Verifier), ADR-140 (Agent Runtime Adapter), ADR-149 (RVF Integration), RuVector ADR-284 (RVF Execution Contract), RuVector ADR-285 (Hosted RVM Security Boundary), RuVector ADR-286 (Capability Schema Mapping), RuVector ADR-287 (WASM Component Model), RuVector ADR-291 (Runtime Compatibility and Version Negotiation)
@@ -119,6 +120,10 @@ inspection and packaging tooling:
    independently against its manifest-declared hash.
 3. **Reject unsigned executable segments by default.** A model or data segment
    may be policy-permitted unsigned; an executable one may not.
+   Before start or a created-state restore, the supplied module bytes must
+   match the length and SHA-256 identity of an executable segment retained by
+   the passing verification report. A mismatch is witnessed and refused
+   before adapter admission or agent creation.
 4. **Never execute RVF content during inspection or packaging.** `rvm inspect`
    and `rvm verify` are first-class operations distinct from `rvm run` precisely
    so that pointing a scanner at a hostile artifact is safe. This is the runtime

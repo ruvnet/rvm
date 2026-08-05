@@ -69,13 +69,19 @@ pub fn container_declaring(classes: &str) -> Vec<u8> {
 /// as long as `classes` keeps the metadata payload under 48 bytes.
 #[must_use]
 pub fn container_with_wasm(classes: &str) -> Vec<u8> {
+    container_with_module(classes, &MINIMAL_WASM)
+}
+
+/// A container declaring `classes` with the supplied unsigned WASM payload.
+#[must_use]
+pub fn container_with_module(classes: &str, module: &[u8]) -> Vec<u8> {
     let meta = meta_payload(classes);
     assert!(
         SEGMENT_HEADER_SIZE + meta.len() <= 128,
         "fixture assumes the META segment occupies two 64-byte blocks"
     );
     let mut data = segment(SEG_TYPE_META, &meta, 1);
-    data.extend(segment(SEG_TYPE_WASM, &MINIMAL_WASM, 2));
+    data.extend(segment(SEG_TYPE_WASM, module, 2));
     data.extend(segment(SEG_TYPE_MANIFEST, b"root", 3));
     data
 }

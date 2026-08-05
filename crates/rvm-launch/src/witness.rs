@@ -14,6 +14,7 @@
 //! | `InstanceTerminated` | `TaskTerminate` | 1 | destroyed |
 //! | `IllegalTransition` | `ProofRejected` | 1 | an operation the state machine does not allow |
 //! | `ContextPermitRejected` | `ProofRejected` | 1 | permit identity or actor did not match launch inputs |
+//! | `ExecutableRejected` | `ProofRejected` | 2 | runtime bytes differed from the verified executable |
 //!
 //! # Why the log has two records for a suspend
 //!
@@ -52,11 +53,13 @@ pub enum LaunchEvent {
     IllegalTransition = 9,
     /// A context permit did not match the package identity or placement actor.
     ContextPermitRejected = 10,
+    /// Runtime bytes did not match a verified executable payload.
+    ExecutableRejected = 11,
 }
 
 impl LaunchEvent {
     /// Every event, in declaration order.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::InstanceCreated,
         Self::InstanceStarted,
         Self::InstanceSuspended,
@@ -67,6 +70,7 @@ impl LaunchEvent {
         Self::InstanceTerminated,
         Self::IllegalTransition,
         Self::ContextPermitRejected,
+        Self::ExecutableRejected,
     ];
 
     /// The `ActionKind` this event is recorded under.
@@ -79,7 +83,10 @@ impl LaunchEvent {
             Self::InstanceResumed => ActionKind::PartitionResume,
             Self::CheckpointTaken => ActionKind::PartitionHibernate,
             Self::CheckpointRestored => ActionKind::PartitionReconstruct,
-            Self::CheckpointRejected | Self::IllegalTransition | Self::ContextPermitRejected => {
+            Self::CheckpointRejected
+            | Self::IllegalTransition
+            | Self::ContextPermitRejected
+            | Self::ExecutableRejected => {
                 ActionKind::ProofRejected
             }
             Self::InstanceTerminated => ActionKind::TaskTerminate,
@@ -93,7 +100,8 @@ impl LaunchEvent {
             Self::InstanceCreated
             | Self::CheckpointTaken
             | Self::CheckpointRestored
-            | Self::CheckpointRejected => 2,
+            | Self::CheckpointRejected
+            | Self::ExecutableRejected => 2,
             _ => 1,
         }
     }
@@ -103,7 +111,10 @@ impl LaunchEvent {
     pub const fn is_refusal(self) -> bool {
         matches!(
             self,
-            Self::CheckpointRejected | Self::IllegalTransition | Self::ContextPermitRejected
+            Self::CheckpointRejected
+                | Self::IllegalTransition
+                | Self::ContextPermitRejected
+                | Self::ExecutableRejected
         )
     }
 }
@@ -202,6 +213,7 @@ pub const fn event_of(record: &WitnessRecord) -> Option<LaunchEvent> {
         8 => LaunchEvent::InstanceTerminated,
         9 => LaunchEvent::IllegalTransition,
         10 => LaunchEvent::ContextPermitRejected,
+        11 => LaunchEvent::ExecutableRejected,
         _ => return None,
     };
     if record.action_kind == tagged.action_kind() as u8 && record.aux[2] == 0 && record.aux[3] == 0
