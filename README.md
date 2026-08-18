@@ -784,6 +784,12 @@ crate-by-crate division of responsibility and roadmap.
 
 ---
 
+## Related
+
+[`ruvnet/LatentMesh`](https://github.com/ruvnet/LatentMesh) — a research prototype for causally-verified latent agent communication; ADR-008 names RVM as the intended capability-ceiling enforcer for latent execution (`execute(z) ⟺ signature ∧ authority ∧ provenance ∧ risk<τ`), mirroring how RVM already enforces authority ceilings for code — design-stage, not yet wired to a live RVM runtime.
+
+---
+
 ## License
 
 Licensed under either of:
