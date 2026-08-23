@@ -473,7 +473,7 @@ impl ContextRuntime {
         handle: &CapabilityHandle,
         target: &RuvUri,
     ) -> Result<ResolvedContext, JsValue> {
-        let request = request(handle, ContextOperation::Resolve, target);
+        let request = request(*handle, ContextOperation::Resolve, target);
         let resolved = self.inner.resolve(&request).map_err(context_error)?;
         Ok(self.wrap(resolved))
     }
@@ -488,7 +488,7 @@ impl ContextRuntime {
         handle: &CapabilityHandle,
         target: &RuvUri,
     ) -> Result<ResolvedContext, JsValue> {
-        let request = request(handle, ContextOperation::Verify, target);
+        let request = request(*handle, ContextOperation::Verify, target);
         let resolved = self.inner.verify(&request).map_err(context_error)?;
         Ok(self.wrap(resolved))
     }
@@ -503,7 +503,7 @@ impl ContextRuntime {
         handle: &CapabilityHandle,
         target: &RuvUri,
     ) -> Result<ReadResult, JsValue> {
-        let request = request(handle, ContextOperation::Read, target);
+        let request = request(*handle, ContextOperation::Read, target);
         let (resolved, bytes) = self.inner.read(&request).map_err(context_error)?;
         Ok(ReadResult {
             context: self.wrap(resolved),
@@ -523,7 +523,7 @@ impl ContextRuntime {
         target: &RuvUri,
         rvf: &[u8],
     ) -> Result<ResolvedContext, JsValue> {
-        let request = request(handle, ContextOperation::Put, target);
+        let request = request(*handle, ContextOperation::Put, target);
         let resolved = self.inner.put(&request, rvf).map_err(context_error)?;
         Ok(self.wrap(resolved))
     }
@@ -539,7 +539,7 @@ impl ContextRuntime {
         target: &RuvUri,
         limit: usize,
     ) -> Result<Vec<ResolvedContext>, JsValue> {
-        let request = request(handle, ContextOperation::List, target);
+        let request = request(*handle, ContextOperation::List, target);
         let found = self.inner.list(&request, limit).map_err(context_error)?;
         Ok(self.wrap_all(found))
     }
@@ -555,7 +555,7 @@ impl ContextRuntime {
         target: &RuvUri,
         limit: usize,
     ) -> Result<Vec<ResolvedContext>, JsValue> {
-        let request = request(handle, ContextOperation::Tree, target);
+        let request = request(*handle, ContextOperation::Tree, target);
         let found = self.inner.tree(&request, limit).map_err(context_error)?;
         Ok(self.wrap_all(found))
     }
@@ -571,7 +571,7 @@ impl ContextRuntime {
         target: &RuvUri,
         limit: usize,
     ) -> Result<Vec<ResolvedContext>, JsValue> {
-        let request = request(handle, ContextOperation::History, target);
+        let request = request(*handle, ContextOperation::History, target);
         let found = self.inner.history(&request, limit).map_err(context_error)?;
         Ok(self.wrap_all(found))
     }
@@ -588,7 +588,7 @@ impl ContextRuntime {
         query: &[u8],
         limit: usize,
     ) -> Result<Vec<ContextHit>, JsValue> {
-        let request = request(handle, ContextOperation::Search, target);
+        let request = request(*handle, ContextOperation::Search, target);
         let hits = self
             .inner
             .search(&request, query, limit)
@@ -613,7 +613,7 @@ impl ContextRuntime {
         next_revision: &str,
     ) -> Result<AliasSnapshot, JsValue> {
         let revision = parse_revision(next_revision)?;
-        let request = request(handle, ContextOperation::CompareAndSwapAlias, target);
+        let request = request(*handle, ContextOperation::CompareAndSwapAlias, target);
         let expected = expected.map(|snapshot| snapshot.inner);
         self.inner
             .compare_and_swap_alias(&request, expected.as_ref(), revision)
@@ -632,7 +632,7 @@ impl ContextRuntime {
         target: &RuvUri,
         expected: &AliasSnapshot,
     ) -> Result<AliasSnapshot, JsValue> {
-        let request = request(handle, ContextOperation::Forget, target);
+        let request = request(*handle, ContextOperation::Forget, target);
         self.inner
             .forget(&request, &expected.inner)
             .map(|inner| AliasSnapshot { inner })
@@ -650,7 +650,7 @@ impl ContextRuntime {
         handle: &CapabilityHandle,
         target: &RuvUri,
     ) -> Result<ExecutionPermit, JsValue> {
-        let request = request(handle, ContextOperation::Execute, target);
+        let request = request(*handle, ContextOperation::Execute, target);
         self.inner
             .authorize_execute(&request)
             .map(|inner| ExecutionPermit { inner })
@@ -671,7 +671,7 @@ impl ContextRuntime {
         target_owner: u32,
     ) -> Result<CapabilityHandle, JsValue> {
         let target_owner = partition(target_owner)?;
-        let request = request(handle, ContextOperation::Grant, target);
+        let request = request(*handle, ContextOperation::Grant, target);
         self.inner
             .grant(
                 &request,
@@ -694,7 +694,7 @@ impl ContextRuntime {
         handle: &CapabilityHandle,
         target: &RuvUri,
     ) -> Result<usize, JsValue> {
-        let request = request(handle, ContextOperation::Revoke, target);
+        let request = request(*handle, ContextOperation::Revoke, target);
         self.inner.revoke(&request).map_err(context_error)
     }
 
@@ -724,7 +724,7 @@ impl ContextRuntime {
             policy_hash,
             detail_root,
         } = *commitments;
-        let request = request(handle, ContextOperation::SealReceipt, target);
+        let request = request(*handle, ContextOperation::SealReceipt, target);
         let mut scratch = vec![WitnessRecord::zeroed(); WITNESS_SLOTS];
         let (sealed, _checkpoint) = self
             .inner
@@ -781,7 +781,7 @@ impl ContextRuntime {
 }
 
 fn request(
-    handle: &CapabilityHandle,
+    handle: CapabilityHandle,
     operation: ContextOperation,
     target: &RuvUri,
 ) -> ContextRequest {
