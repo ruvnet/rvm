@@ -86,9 +86,7 @@ impl LaunchEvent {
             Self::CheckpointRejected
             | Self::IllegalTransition
             | Self::ContextPermitRejected
-            | Self::ExecutableRejected => {
-                ActionKind::ProofRejected
-            }
+            | Self::ExecutableRejected => ActionKind::ProofRejected,
             Self::InstanceTerminated => ActionKind::TaskTerminate,
         }
     }

@@ -76,9 +76,7 @@ impl From<LaunchError> for RvmError {
             LaunchError::IllegalTransition { .. } => RvmError::InvalidPartitionState,
             LaunchError::LineageMismatch
             | LaunchError::ContextPermitMismatch
-            | LaunchError::ExecutableMismatch => {
-                RvmError::ProofInvalid
-            }
+            | LaunchError::ExecutableMismatch => RvmError::ProofInvalid,
             LaunchError::Host(inner) => inner.into(),
             LaunchError::Backend(inner) => inner,
             LaunchError::Rvf(inner) => inner.into(),
