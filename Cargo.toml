@@ -69,7 +69,7 @@ sha2 = { version = "0.10", default-features = false }
 sha3 = { version = "0.10", default-features = false }
 subtle = { version = "2.6", default-features = false }
 xxhash-rust = { version = "0.8", default-features = false, features = ["xxh3"] }
-spin = { version = "0.9", default-features = false }
+spin = { version = "0.10", default-features = false }
 bitflags = { version = "2", default-features = false }
 
 # Testing
