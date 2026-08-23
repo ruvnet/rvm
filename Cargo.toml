@@ -17,6 +17,7 @@ members = [
     "crates/rvm-host",
     "crates/rvm-launch",
     "crates/rvm-context",
+    "crates/rvm-context-wasm",
     "crates/rvm-context-service",
     "crates/rvm-gpu",
     "crates/rvm-kernel",

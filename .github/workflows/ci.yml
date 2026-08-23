@@ -14,7 +14,7 @@ jobs:
           targets: aarch64-unknown-none
           components: clippy, rustfmt
 
-      - run: cargo fmt -p rvm-context -p rvm-context-service -p rvm-launch -p rvm-witness -p rvm-kernel -- --check
+      - run: cargo fmt -p rvm-context -p rvm-context-service -p rvm-context-wasm -p rvm-launch -p rvm-witness -p rvm-kernel -- --check
       - run: cargo check --workspace --locked
       - run: cargo test --workspace --locked
       - run: cargo clippy --workspace --locked -- -D warnings
@@ -35,6 +35,29 @@ jobs:
           targets: aarch64-unknown-none
       - run: cargo check -p rvm-context --all-features --locked
       - run: cargo check --target aarch64-unknown-none -p rvm-context --no-default-features --locked
+
+  # The binding's tests are wasm_bindgen_test, which compile to nothing on the
+  # host, so `cargo test --workspace` above runs zero of them. They only run
+  # here, on the real wasm32 target.
+  context-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: git submodule update --init --depth 1 ruvector
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+
+      - run: cargo clippy -p rvm-context-wasm --all-targets --target wasm32-unknown-unknown --locked -- -D warnings
+      - run: wasm-pack test --node crates/rvm-context-wasm
+      - run: node crates/rvm-context-wasm/scripts/build-npm.mjs
+      - run: node crates/rvm-context-wasm/tests/smoke.mjs
 
   audit:
     runs-on: ubuntu-latest

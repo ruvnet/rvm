@@ -1,1 +1,5 @@
 /target/
+
+# wasm-pack npm build output for crates/rvm-context-wasm
+crates/rvm-context-wasm/pkg/
+crates/rvm-context-wasm/pkg-web/
