@@ -1,6 +1,11 @@
-# Crate Reference: All 13 RVM Crates
+# Crate Reference: The 13 Core RVM Crates
 
-This chapter provides a concise reference for every crate in the RVM workspace.
+This chapter provides a concise reference for the thirteen core crates, `rvm-types`
+through `rvm-kernel`.
+
+The workspace has since grown to 21. Not yet covered here: `rvm-anchor`,
+`rvm-context`, `rvm-context-service`, `rvm-context-wasm`, `rvm-gpu`, `rvm-host`,
+`rvm-launch`, and `rvm-rvf`.
 Each section describes what the crate does, lists its key public types, notes
 its feature flags and internal dependencies, and points to the chapter with
 deeper coverage.

@@ -45,7 +45,8 @@ qemu-system-aarch64 --version   # should print 8.0 or higher
 
 ## Step 1: Clone and Build
 
-Clone the repository and verify that all 945 tests pass on your host machine:
+Clone the repository and verify that the full suite passes on your host machine
+(1,279 tests at the time of writing; treat CI as the current authority):
 
 ```bash
 git clone https://github.com/ruvnet/rvm.git

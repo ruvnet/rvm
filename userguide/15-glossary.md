@@ -218,7 +218,7 @@ the root partition delegating subsets of its authority. See [Bare-Metal
 Deployment](12-bare-metal.md).
 
 **RVM** (RuVix Virtual Machine) -- The coherence-native bare-metal
-microhypervisor. 13 crates, 648 tests, 11 benchmarks.
+microhypervisor. 21 crates, 1,279 tests, 9 benchmark groups.
 
 **RuVector** -- An optional library providing production-grade graph
 algorithms: MinCut, sparsification, spectral solvers, and IIT-inspired

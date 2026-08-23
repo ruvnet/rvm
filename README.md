@@ -565,6 +565,22 @@ See [ADR-144](docs/adr/ADR-144-gpu-compute-support.md) for the complete architec
 | ADR-140 | Agent runtime adapter |
 | ADR-141 | Coherence engine kernel integration and runtime pipeline |
 | ADR-142 | TEE-backed cryptographic verification (SHA-256, Ed25519, HMAC-SHA256, TEE pipeline) |
+| ADR-143 | Nightly verified release pipeline |
+| ADR-144 | GPU compute support via cuda-rust-wasm |
+| ADR-145 | IPC protocol semantics |
+| ADR-146 | SMP scheduling model |
+| ADR-147 | Hardware abstraction layer contract |
+| ADR-148 | Error model and recovery state machine |
+| ADR-149 | RVF integration for RVM |
+| ADR-150 | Device lease lifecycle protocol |
+| ADR-151 | GPU witness event registry |
+| ADR-152 | GPU MinCut correctness model |
+| ADR-153 | Multi-node mesh protocol |
+| ADR-154 | Formal verification roadmap |
+| ADR-155 | RVF execution contract for RVForge packages |
+| ADR-156 | External receipt anchoring into the witness chain |
+| ADR-157 | Capability-governed `ruv://` context namespace |
+| ADR-158 | Durable hosted `ruv://` context service |
 
 </details>
 
@@ -893,6 +909,17 @@ revisions.
 See [ADR-155](docs/adr/ADR-155-rvf-execution-contract.md) for the decision
 record and [RVForge Integration Map](docs/RVFORGE-INTEGRATION.md) for the
 crate-by-crate division of responsibility and roadmap.
+
+---
+
+## Related
+
+[`ruvnet/LatentMesh`](https://github.com/ruvnet/LatentMesh) — a research prototype for
+causally-verified latent agent communication. Its
+[ADR-008](https://github.com/ruvnet/LatentMesh/blob/main/docs/adr/008-capability-governed-execution.md)
+names RVM as the intended capability-ceiling enforcer for latent execution,
+mirroring how RVM already enforces authority ceilings for code. Design-stage:
+not yet wired to a live RVM runtime.
 
 ---
 
