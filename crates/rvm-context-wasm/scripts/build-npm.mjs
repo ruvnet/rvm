@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the @ruvnet/rvm-context npm package from the rvm-context-wasm crate.
+// Builds the @ruvnet/rvm-context-wasm npm package from the rvm-context-wasm crate.
 //
 // wasm-pack derives the npm package name from the crate name, so this script
 // runs both target builds and then rewrites the generated manifest into the
@@ -15,7 +15,7 @@ const pkgDir = join(crateDir, "pkg");
 const webStageDir = join(crateDir, "pkg-web");
 const webDir = join(pkgDir, "web");
 
-const PACKAGE_NAME = "@ruvnet/rvm-context";
+const PACKAGE_NAME = "@ruvnet/rvm-context-wasm";
 const ENTRY = "rvm_context_wasm";
 
 function wasmPack(target, outDir) {
@@ -57,7 +57,7 @@ const manifest = {
   name: PACKAGE_NAME,
   version: generated.version,
   description:
-    "Canonical ruv:// context URI parsing, validation, and formatting for RVM, compiled to WebAssembly",
+    "The RVM ruv:// context namespace compiled to WebAssembly: canonical URI parsing, scope arithmetic, a self-contained governed runtime, and witness verification",
   license: generated.license,
   repository: { type: "git", url: "git+https://github.com/ruvnet/rvm.git" },
   homepage: "https://ruvnet.github.io/rvm/ruv-context/",

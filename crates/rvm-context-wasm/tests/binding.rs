@@ -421,3 +421,286 @@ fn distinct_revisions_produce_distinct_uris() {
     assert!(!a.equals(&b));
     assert_ne!(a.render(), b.render());
 }
+
+// ---------------------------------------------------------------------------
+// Governed runtime
+//
+// These are wasm-only because every rejection path constructs a JsValue.
+// ---------------------------------------------------------------------------
+
+use rvm_context_wasm::{ContextRuntime, EpochCommitments, Rights};
+
+const BASE: &str = "ruv://context.example/acme/agent/researcher/memory";
+
+fn runtime_with_root(
+    scope_uri: &str,
+    operations: &[&str],
+) -> (ContextRuntime, rvm_context_wasm::CapabilityHandle) {
+    let mut runtime = ContextRuntime::new(7).expect("actor in range");
+    let root = RuvUri::parse(scope_uri).expect("scope root parses");
+    let scope = ContextScope::from_uri(&root, &ViewMask::all());
+    let rights = Rights::for_operations(operations.iter().map(|op| (*op).into()).collect())
+        .expect("registered operations");
+    let handle = runtime
+        .issue_root(&scope, &rights, 7)
+        .expect("root capability issues");
+    (runtime, handle)
+}
+
+#[wasm_bindgen_test]
+fn runtime_issues_and_revokes_a_root_capability() {
+    let (mut runtime, handle) = runtime_with_root(BASE, &["resolve", "read"]);
+    assert_eq!(runtime.actor(), 7);
+    // The generation is an opaque staleness counter; only its role matters,
+    // which `a_stale_handle_is_refused_after_revocation` covers.
+    let felled = runtime.revoke(&handle).expect("revocation succeeds");
+    assert!(felled >= 1, "revoking a root should fell at least itself");
+}
+
+#[wasm_bindgen_test]
+fn a_stale_handle_is_refused_after_revocation() {
+    let (mut runtime, handle) = runtime_with_root(BASE, &["resolve"]);
+    runtime.revoke(&handle).expect("revocation succeeds");
+    let target = RuvUri::parse(BASE).expect("parses");
+    let error = runtime
+        .resolve(&handle, &target)
+        .err()
+        .expect("a revoked handle must not resolve");
+    assert_eq!(thrown_code(&error), "AccessDenied");
+}
+
+#[wasm_bindgen_test]
+fn a_cross_tenant_reach_is_refused() {
+    let (mut runtime, handle) = runtime_with_root(BASE, &["resolve", "read"]);
+    // Same shape, different tenant.
+    let other_tenant =
+        RuvUri::parse("ruv://context.example/other/agent/researcher/memory").expect("parses");
+    let error = runtime
+        .resolve(&handle, &other_tenant)
+        .err()
+        .expect("a cross-tenant reach must be refused");
+    assert_eq!(thrown_code(&error), "AccessDenied");
+
+    // Same tenant, different subject.
+    let other_subject =
+        RuvUri::parse("ruv://context.example/acme/agent/other/memory").expect("parses");
+    assert_eq!(
+        thrown_code(
+            &runtime
+                .resolve(&handle, &other_subject)
+                .err()
+                .expect("refused")
+        ),
+        "AccessDenied"
+    );
+
+    // Same subject, different collection.
+    let other_collection =
+        RuvUri::parse("ruv://context.example/acme/agent/researcher/skills").expect("parses");
+    assert_eq!(
+        thrown_code(
+            &runtime
+                .resolve(&handle, &other_collection)
+                .err()
+                .expect("refused")
+        ),
+        "AccessDenied"
+    );
+}
+
+#[wasm_bindgen_test]
+fn a_reach_outside_the_path_prefix_is_refused_at_the_last_segment() {
+    // The scope is pinned three segments deep. The violating segment is at the
+    // LAST prefix position: a containment check inside a short-circuiting loop
+    // would pass position 1 and still be wrong here.
+    let (mut runtime, handle) = runtime_with_root(&format!("{BASE}/a/b/c"), &["resolve"]);
+
+    let diverges_last = RuvUri::parse(&format!("{BASE}/a/b/X")).expect("parses");
+    assert_eq!(
+        thrown_code(
+            &runtime
+                .resolve(&handle, &diverges_last)
+                .err()
+                .expect("divergence at the last prefix segment must be refused")
+        ),
+        "AccessDenied"
+    );
+
+    let diverges_middle = RuvUri::parse(&format!("{BASE}/a/X/c")).expect("parses");
+    assert_eq!(
+        thrown_code(
+            &runtime
+                .resolve(&handle, &diverges_middle)
+                .err()
+                .expect("divergence in the middle must be refused")
+        ),
+        "AccessDenied"
+    );
+
+    // A strict ancestor of the scope is also outside it.
+    let ancestor = RuvUri::parse(&format!("{BASE}/a/b")).expect("parses");
+    assert_eq!(
+        thrown_code(&runtime.resolve(&handle, &ancestor).err().expect("refused")),
+        "AccessDenied"
+    );
+}
+
+#[wasm_bindgen_test]
+fn rights_are_enforced_per_operation() {
+    // Read-only rights must not authorize a write.
+    let (mut runtime, handle) = runtime_with_root(BASE, &["resolve"]);
+    let pinned = RuvUri::parse(&format!("{BASE}?rev={ZERO_REV}")).expect("parses");
+    let error = runtime
+        .put(&handle, &pinned, &[0_u8; 8])
+        .err()
+        .expect("a read-only capability must not put");
+    assert_eq!(thrown_code(&error), "AccessDenied");
+}
+
+#[wasm_bindgen_test]
+fn delegation_cannot_widen_the_parent_scope() {
+    let (mut runtime, handle) = runtime_with_root(&format!("{BASE}/a/b"), &["resolve", "grant"]);
+
+    // Widening the path prefix upward must be refused.
+    let wider = ContextScope::from_uri(
+        &RuvUri::parse(&format!("{BASE}/a")).expect("parses"),
+        &ViewMask::all(),
+    );
+    let rights = Rights::for_operation("resolve").expect("registered");
+    let error = runtime
+        .delegate(&handle, &wider, &rights, 7)
+        .err()
+        .expect("widening the scope must be refused");
+    assert_eq!(thrown_code(&error), "ScopeEscalation");
+
+    // Narrowing is allowed.
+    let narrower = ContextScope::from_uri(
+        &RuvUri::parse(&format!("{BASE}/a/b/c")).expect("parses"),
+        &ViewMask::all(),
+    );
+    let child = runtime
+        .delegate(&handle, &narrower, &rights, 7)
+        .expect("narrowing delegation succeeds");
+    assert!(child.index() != handle.index() || child.generation() != handle.generation());
+}
+
+#[wasm_bindgen_test]
+fn delegation_cannot_widen_the_view_mask() {
+    let narrow_views = ViewMask::view("abstract").expect("view");
+    let mut runtime = ContextRuntime::new(7).expect("actor in range");
+    let root = RuvUri::parse(BASE).expect("parses");
+    let scope = ContextScope::from_uri(&root, &narrow_views);
+    let rights = Rights::for_operations(vec!["resolve".into(), "grant".into()]).expect("rights");
+    let handle = runtime.issue_root(&scope, &rights, 7).expect("root issues");
+
+    let wider = ContextScope::from_uri(&root, &ViewMask::all());
+    let error = runtime
+        .delegate(&handle, &wider, &rights, 7)
+        .err()
+        .expect("widening the view mask must be refused");
+    assert_eq!(thrown_code(&error), "ScopeEscalation");
+}
+
+#[wasm_bindgen_test]
+fn the_witness_log_records_decisions_and_verifies() {
+    let (mut runtime, handle) = runtime_with_root(BASE, &["resolve", "read"]);
+    let before = runtime.witness_sequence();
+
+    let outside =
+        RuvUri::parse("ruv://context.example/other/agent/researcher/memory").expect("parses");
+    let _ = runtime.resolve(&handle, &outside);
+    let target = RuvUri::parse(BASE).expect("parses");
+    let _ = runtime.resolve(&handle, &target);
+
+    let after = runtime.witness_sequence();
+    assert!(
+        after > before,
+        "governed decisions must advance the witness sequence: {before} -> {after}"
+    );
+    assert_eq!(
+        runtime.witness_record_count() as u64,
+        after,
+        "retained record count should match the sequence for a short session"
+    );
+
+    // The keyless chain check must pass over the module's own log.
+    let verified = runtime
+        .verify_witness_chain()
+        .expect("the module's own chain verifies");
+    assert_eq!(verified as u64, after);
+
+    // Digests are 32 bytes each and cover every retained record.
+    let digests = runtime.witness_digests();
+    assert_eq!(digests.len(), runtime.witness_record_count() * 32);
+}
+
+#[wasm_bindgen_test]
+fn the_logical_clock_makes_sessions_reproducible() {
+    let first = scripted_witness_digests();
+    let second = scripted_witness_digests();
+    assert_eq!(
+        first, second,
+        "two identical sessions must produce identical witness digests"
+    );
+    assert!(!first.is_empty(), "the session recorded nothing");
+}
+
+fn scripted_witness_digests() -> Vec<u8> {
+    let (mut runtime, handle) = runtime_with_root(BASE, &["resolve", "read"]);
+    let outside =
+        RuvUri::parse("ruv://context.example/other/agent/researcher/memory").expect("parses");
+    let _ = runtime.resolve(&handle, &outside);
+    runtime.witness_digests()
+}
+
+#[wasm_bindgen_test]
+fn rights_names_round_trip() {
+    let rights = Rights::from_names(vec!["read".into(), "write".into(), "prove".into()])
+        .expect("known rights");
+    assert_eq!(rights.names(), vec!["read", "write", "prove"]);
+    assert_eq!(
+        thrown_code(
+            &Rights::from_names(vec!["admin".into()])
+                .err()
+                .expect("rejected")
+        ),
+        "UnknownRight"
+    );
+    assert_eq!(
+        thrown_code(&Rights::for_operation("teleport").err().expect("rejected")),
+        "UnknownOperation"
+    );
+}
+
+#[wasm_bindgen_test]
+fn an_out_of_range_partition_is_refused() {
+    let error = ContextRuntime::new(4096).err().expect("rejected");
+    assert_eq!(thrown_code(&error), "InvalidPartitionId");
+    assert!(ContextRuntime::new(4095).is_ok());
+}
+
+#[wasm_bindgen_test]
+fn receipt_verification_requires_a_thirty_two_byte_key() {
+    let (mut runtime, handle) = runtime_with_root(BASE, &["resolve", "sealReceipt"]);
+    let target = RuvUri::parse(BASE).expect("parses");
+    let _ = runtime.resolve(&handle, &target);
+    let commitments = EpochCommitments::new(&[0; 32], &[0; 32], &[0; 32], &[0; 32])
+        .expect("32-byte roots are accepted");
+    let error = runtime
+        .seal_epoch(&handle, &target, &[0_u8; 8], &commitments)
+        .err()
+        .expect("a short key must be refused");
+    assert_eq!(thrown_code(&error), "InvalidKeyLength");
+
+    // A commitment of the wrong length names the field that was wrong.
+    let error = EpochCommitments::new(&[0; 32], &[0; 31], &[0; 32], &[0; 32])
+        .err()
+        .expect("a short root must be refused");
+    assert_eq!(thrown_code(&error), "InvalidDigestLength");
+}
+
+#[wasm_bindgen_test]
+fn capacities_are_published() {
+    let capacities = ContextRuntime::capacities();
+    assert_eq!(capacities, vec![64_u32, 64, 1024, 64, 64]);
+}

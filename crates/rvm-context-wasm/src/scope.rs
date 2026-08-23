@@ -106,6 +106,12 @@ impl ViewMask {
     }
 }
 
+impl ContextScope {
+    pub(crate) fn inner(&self) -> &CoreScope {
+        &self.inner
+    }
+}
+
 impl ViewMask {
     pub(crate) fn from_inner(inner: ContextViewMask) -> Self {
         Self { inner }
@@ -199,5 +205,22 @@ impl ContextScope {
     #[must_use]
     pub fn contains_scope(&self, child: &ContextScope) -> bool {
         self.inner.contains_scope(&child.inner)
+    }
+
+    /// Whether `uri` names something inside this region.
+    ///
+    /// This is the shadow-mode question — "would `ruv://` have allowed this
+    /// reach?" — answered with no capability, no runtime, and no witness
+    /// record. It compares the authority, tenant, subject, collection, and
+    /// path prefix.
+    ///
+    /// It is name containment only. It is **not** an access check: it does not
+    /// consult rights, and it cannot tell you whether any caller holds a
+    /// capability over this region. Only the kernel decides that.
+    #[wasm_bindgen(js_name = containsUri)]
+    #[must_use]
+    pub fn contains_uri(&self, uri: &RuvUri) -> bool {
+        let target = CoreScope::from_uri(uri.inner(), self.inner.views());
+        self.inner.contains_scope(&target)
     }
 }

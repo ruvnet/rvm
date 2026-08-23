@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Node smoke test for the built @ruvnet/rvm-context package.
+// Node smoke test for the built @ruvnet/rvm-context-wasm package.
 //
 // Packs and installs the package into a temporary directory, then imports it by
 // its published name so the exports map and files list are exercised the same
@@ -46,9 +46,19 @@ execFileSync(
 );
 
 const require = createRequire(join(stage, "index.js"));
-const rvm = require("@ruvnet/rvm-context");
-const { RuvUri, RuvUriBuilder, ViewMask, ContextScope, ruvUriError, isRuvUri, contractVersion } =
-  rvm;
+const rvm = require("@ruvnet/rvm-context-wasm");
+const {
+  RuvUri,
+  RuvUriBuilder,
+  ViewMask,
+  ContextScope,
+  ContextRuntime,
+  EpochCommitments,
+  Rights,
+  ruvUriError,
+  isRuvUri,
+  contractVersion,
+} = rvm;
 
 let passed = 0;
 const failures = [];
@@ -227,10 +237,10 @@ test("the contract version is exposed", () => {
 test("TypeScript declarations and the web build ship with the package", () => {
   // The exports map deliberately does not expose arbitrary subpaths, so locate
   // the install through its package.json rather than resolving files directly.
-  const installed = dirname(require.resolve("@ruvnet/rvm-context/package.json"));
-  const manifest = require("@ruvnet/rvm-context/package.json");
+  const installed = dirname(require.resolve("@ruvnet/rvm-context-wasm/package.json"));
+  const manifest = require("@ruvnet/rvm-context-wasm/package.json");
 
-  assert.equal(manifest.name, "@ruvnet/rvm-context");
+  assert.equal(manifest.name, "@ruvnet/rvm-context-wasm");
   assert.equal(manifest.license, "MIT OR Apache-2.0");
   assert.ok(existsSync(join(installed, manifest.types)), "the .d.ts is installed");
   assert.ok(existsSync(join(installed, manifest.main)), "the entry point is installed");
@@ -243,6 +253,153 @@ test("TypeScript declarations and the web build ship with the package", () => {
     "the web build is installed"
   );
   assert.ok(existsSync(join(installed, "README.md")), "the README is installed");
+});
+
+// ---------------------------------------------------------------------------
+// Governed runtime, as a consumer would drive it.
+// ---------------------------------------------------------------------------
+
+function rootedRuntime(scopeUri, operations) {
+  const runtime = new ContextRuntime(7);
+  const scope = ContextScope.fromUri(RuvUri.parse(scopeUri), ViewMask.all());
+  const handle = runtime.issueRoot(scope, Rights.forOperations(operations), 7);
+  return { runtime, handle };
+}
+
+test("the runtime provisions a root capability and reports its actor", () => {
+  const { runtime, handle } = rootedRuntime(BASE, ["resolve", "read"]);
+  assert.equal(runtime.actor, 7);
+  assert.ok(Number.isInteger(handle.index));
+  // Published as a static readonly Uint32Array of the compiled-in slot counts.
+  assert.deepEqual(Array.from(ContextRuntime.capacities), [64, 64, 1024, 64, 64]);
+});
+
+test("a cross-tenant reach is refused", () => {
+  const { runtime, handle } = rootedRuntime(BASE, ["resolve", "read"]);
+  const other = RuvUri.parse("ruv://context.example/other/agent/researcher/memory");
+  assert.throws(
+    () => runtime.resolve(handle, other),
+    (error) => {
+      assert.equal(error.name, "ContextError");
+      assert.equal(error.code, "AccessDenied");
+      return true;
+    }
+  );
+});
+
+test("a reach diverging at the LAST prefix segment is refused", () => {
+  // The violating segment is deliberately last: a containment check inside a
+  // short-circuiting loop would pass position 1 and still be wrong here.
+  const { runtime, handle } = rootedRuntime(`${BASE}/a/b/c`, ["resolve"]);
+  for (const bad of [`${BASE}/a/b/X`, `${BASE}/a/X/c`, `${BASE}/X/b/c`, `${BASE}/a/b`]) {
+    assert.throws(
+      () => runtime.resolve(handle, RuvUri.parse(bad)),
+      (error) => error.code === "AccessDenied",
+      `${bad} should have been refused`
+    );
+  }
+});
+
+test("scope containment answers the shadow-mode question with no capability", () => {
+  const scope = ContextScope.fromUri(RuvUri.parse(`${BASE}/a/b/c`), ViewMask.all());
+  assert.equal(scope.containsUri(RuvUri.parse(`${BASE}/a/b/c/d`)), true);
+  assert.equal(scope.containsUri(RuvUri.parse(`${BASE}/a/b/X`)), false);
+  assert.equal(
+    scope.containsUri(RuvUri.parse("ruv://context.example/other/agent/researcher/memory/a/b/c")),
+    false
+  );
+});
+
+test("rights are enforced per operation", () => {
+  const { runtime, handle } = rootedRuntime(BASE, ["resolve"]);
+  const pinned = RuvUri.parse(`${BASE}?rev=${ZERO_REV}`);
+  assert.throws(
+    () => runtime.put(handle, pinned, new Uint8Array(8)),
+    (error) => error.code === "AccessDenied"
+  );
+});
+
+test("delegation cannot widen the parent scope", () => {
+  const { runtime, handle } = rootedRuntime(`${BASE}/a/b`, ["resolve", "grant"]);
+  const wider = ContextScope.fromUri(RuvUri.parse(`${BASE}/a`), ViewMask.all());
+  assert.throws(
+    () => runtime.delegate(handle, wider, Rights.forOperation("resolve"), 7),
+    (error) => error.code === "ScopeEscalation"
+  );
+  const narrower = ContextScope.fromUri(RuvUri.parse(`${BASE}/a/b/c`), ViewMask.all());
+  const child = runtime.delegate(handle, narrower, Rights.forOperation("resolve"), 7);
+  assert.ok(Number.isInteger(child.index));
+});
+
+test("a revoked handle stops working", () => {
+  const { runtime, handle } = rootedRuntime(BASE, ["resolve"]);
+  assert.ok(runtime.revoke(handle) >= 1);
+  assert.throws(
+    () => runtime.resolve(handle, RuvUri.parse(BASE)),
+    (error) => error.code === "AccessDenied"
+  );
+});
+
+test("decisions advance the witness log and the chain verifies", () => {
+  const { runtime, handle } = rootedRuntime(BASE, ["resolve", "read"]);
+  const before = runtime.witnessSequence;
+  try {
+    runtime.resolve(handle, RuvUri.parse("ruv://context.example/other/agent/researcher/memory"));
+  } catch {
+    // refused on purpose; the witness record is the point
+  }
+  const after = runtime.witnessSequence;
+  assert.ok(after > before, `witness sequence did not advance: ${before} -> ${after}`);
+  assert.equal(runtime.verifyWitnessChain(), Number(after));
+  assert.equal(runtime.witnessDigests().length, runtime.witnessRecordCount * 32);
+});
+
+test("the logical clock makes sessions byte-reproducible", () => {
+  const run = () => {
+    const { runtime, handle } = rootedRuntime(BASE, ["resolve"]);
+    try {
+      runtime.resolve(handle, RuvUri.parse("ruv://context.example/other/agent/researcher/memory"));
+    } catch {
+      // refused on purpose
+    }
+    return Buffer.from(runtime.witnessDigests()).toString("hex");
+  };
+  const first = run();
+  assert.equal(first, run(), "identical sessions produced different witness digests");
+  assert.ok(first.length > 0, "the session recorded nothing");
+});
+
+test("receipt sealing requires a host-supplied 32-byte key", () => {
+  const { runtime, handle } = rootedRuntime(BASE, ["resolve", "sealReceipt"]);
+  const target = RuvUri.parse(BASE);
+  const roots = new Uint8Array(32);
+  const commitments = new EpochCommitments(roots, roots, roots, roots);
+  assert.throws(
+    () => runtime.sealEpoch(handle, target, new Uint8Array(8), commitments),
+    (error) => error.code === "InvalidKeyLength"
+  );
+  assert.throws(
+    () => new EpochCommitments(roots, new Uint8Array(31), roots, roots),
+    (error) => error.code === "InvalidDigestLength"
+  );
+});
+
+test("rights map to the operations that need them", () => {
+  assert.equal(Rights.forOperation("read").bits, 0x01);
+  assert.equal(Rights.forOperation("put").bits, 0x02);
+  assert.equal(Rights.forOperation("execute").bits, 0x10);
+  assert.deepEqual(Rights.fromNames(["read", "prove"]).names, ["read", "prove"]);
+  assert.throws(
+    () => Rights.fromNames(["admin"]),
+    (error) => error.code === "UnknownRight"
+  );
+});
+
+test("an out-of-range partition id is refused", () => {
+  assert.throws(
+    () => new ContextRuntime(4096),
+    (error) => error.code === "InvalidPartitionId"
+  );
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

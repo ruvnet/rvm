@@ -1,14 +1,45 @@
-# @ruvnet/rvm-context
+# @ruvnet/rvm-context-wasm
 
-TypeScript and JavaScript bindings for the RVM `ruv://` context namespace, compiled to
-WebAssembly from the Rust [`rvm-context`](https://github.com/ruvnet/rvm/tree/main/crates/rvm-context)
-crate.
-
-This is the **naming and validation layer**. It parses, validates, constructs, and
-canonically formats `ruv://` URIs using the exact same code the RVM kernel uses, so a
-JavaScript tool and the kernel can never disagree about what a name means.
+The RVM `ruv://` context namespace compiled to WebAssembly from the Rust
+[`rvm-context`](https://github.com/ruvnet/rvm/tree/main/crates/rvm-context) crate, with
+TypeScript declarations.
 
 Full namespace documentation: <https://ruvnet.github.io/rvm/ruv-context/>
+
+## Read this first: the wasm module is its own authority
+
+This package hosts a **complete governed context runtime** — its own capability table,
+grant table, witness ring, and deterministic logical clock. That has consequences you
+must understand before using the runtime layer.
+
+Every capability it issues is an **index and a generation into its own live table**. A
+capability handle is not signed, not serializable, and **not portable**. A handle minted
+by a Rust-side service is just two integers that would index a different table here.
+There is no "verify a capability issued elsewhere" API, because that is not
+implementable: the module either owns its authority or it authorizes nothing.
+
+A decision this module renders **binds only to the scope table the host provisioned into
+it**. It is a faithful, deterministic policy simulator — correct for shadow-mode
+evaluation — and it is **not evidence about a separate Rust-side authority** unless that
+authority provisioned the same scopes. Anyone promoting this to enforcement must
+provision the grant table from the same authority that issues real capabilities.
+
+Two further limits, stated plainly rather than buried:
+
+- **Root provisioning runs as the hypervisor.** The core crate refuses root capability
+  creation unless the caller is `PartitionId::HYPERVISOR`. `issueRoot` performs it *as*
+  the hypervisor, which is the concrete form of "its own authority". Treat it as host
+  setup, not as something a partition may do. Everything below a root is subject to the
+  ordinary governed checks.
+- **Receipt signatures are a keyed MAC, not a public signature.** Receipts are signed
+  with HMAC-SHA256, which is symmetric, so verifying one requires the same key that
+  signed it. A caller able to check a receipt is equally able to forge one. Receipt
+  verification here is an integrity check against corruption — it is **not** third-party
+  verifiable evidence. The keyless checks (`verifyWitnessChain`, `witnessDigests`) are
+  the ones that survive a trust boundary.
+
+**The naming layer needs none of this.** `RuvUri` and `ContextScope` are pure and stand
+completely alone — see below.
 
 ## What a `ruv://` URI looks like
 
@@ -24,13 +55,13 @@ about URI equivalence.
 ## Install
 
 ```sh
-npm install @ruvnet/rvm-context
+npm install @ruvnet/rvm-context-wasm
 ```
 
 ## Usage
 
 ```js
-const { RuvUri, RuvUriBuilder, ruvUriError } = require("@ruvnet/rvm-context");
+const { RuvUri, RuvUriBuilder, ruvUriError } = require("@ruvnet/rvm-context-wasm");
 
 const uri = RuvUri.parse(
   "ruv://context.example/acme/agent/researcher/memory/projects/atlas"
@@ -51,7 +82,7 @@ uri.toString();  // the canonical spelling, byte for byte
 An ES module build for browsers and bundlers is published at the `/web` subpath:
 
 ```js
-import init, { RuvUri } from "@ruvnet/rvm-context/web";
+import init, { RuvUri } from "@ruvnet/rvm-context-wasm/web";
 await init();
 ```
 
@@ -108,7 +139,7 @@ and `NonAscii`.
 progressive views it discloses:
 
 ```js
-const { ContextScope, ViewMask } = require("@ruvnet/rvm-context");
+const { ContextScope, ViewMask } = require("@ruvnet/rvm-context-wasm");
 
 const parent = ContextScope.fromUri(RuvUri.parse(base + "/projects"), ViewMask.all());
 const child = ContextScope.fromUri(RuvUri.parse(base + "/projects/atlas"), ViewMask.all());
@@ -140,24 +171,31 @@ anyone may read, write, or execute what it names.
 
 Deliberately **not** exposed:
 
-- **The governed runtime** (`ContextRuntime`, `ExecutionPermit`) and **the resolver**
-  (`ContextResolver`, `MemoryResolver`). These require an authenticated partition
-  identity, a context clock, and live storage. A JavaScript-side actor supplying those
-  would be precisely the forgery the design prevents.
-- **Capability issuance, delegation, and revocation** (`ContextAuthority`,
-  `ContextGrantTable`, `AuthorizedRequest`). Authorization decisions belong to the
-  kernel, which alone can bind a capability to a scope and commit the decision to the
-  witness trail.
-- **Receipt sealing** (`ContextEpochReceipt` and friends), which mints signed witness
-  records.
+- **Any way to verify or import a capability issued by another process.** See above: a
+  handle is a local table index, so this cannot be built.
+- **`default_signer`, `with_default_key`, `derive_witness_key`, and `dev_measurement`.**
+  A well-known or derivable default signing key is indistinguishable from no key at all.
+  The host supplies the 32-byte key or nothing is signed.
 - **`VerifiedContextProfile.from_rvf`**, which binds a profile to a verified RVF
-  identity. It needs full RVF container bytes and a set of trusted Ed25519 publisher
-  keys — a key-management concern that belongs to the host, not to a naming library.
+  identity. It needs full RVF container bytes and trusted publisher keys — a
+  key-management concern that belongs to the host.
 
-`ContextScope.containsScope` is included because it is pure name arithmetic, and because
-a JavaScript caller who needs it would otherwise hand-roll a prefix match that drifts
-from the kernel's. Reusing the real implementation is safer than reimplementing it. It
-still is not an access check: only the kernel decides what a capability permits.
+### Fixed capacities
+
+The core types hold their tables inline, so this module compiles in fixed capacities
+rather than the core defaults. `ContextRuntime.capacities` reports them:
+
+| Table | Slots |
+| --- | --- |
+| Capabilities | 64 |
+| Scope grants | 64 |
+| Witness ring | 1024 |
+| Resolver objects | 64 |
+| Resolver aliases | 64 |
+
+The core witness default is 262,144 records, which as an inline array would reserve
+about 16 MiB inside the module. The ring is sized down here, and the capacity is part of
+this package's published contract.
 
 ## API surface
 
@@ -178,6 +216,44 @@ still is not an access check: only the kernel decides what a capability permits.
 | `scope.containsScope(child)` | Name containment, not authorization. |
 | `ContextProfile.decode(bytes)` / `.toBytes()` / `.views` / `.view(name)` | Profile codec. |
 | `contractVersion()` | The `ruv://` contract version this binding implements. |
+
+
+### Governed runtime
+
+Read the authority caveat at the top before using any of these.
+
+| Export | Purpose |
+| --- | --- |
+| `new ContextRuntime(actorId)` | A runtime bound to an actor, with a deterministic logical clock. |
+| `runtime.issueRoot(scope, rights, owner)` | Host provisioning; runs as the hypervisor. |
+| `runtime.delegate(handle, childScope, rights, owner)` | Narrower delegation; refuses escalation. |
+| `runtime.revoke(handle)` | Revoke a lineage, returning how many capabilities fell. |
+| `runtime.resolve / read / verify / put / list / tree / history / search` | Governed operations. |
+| `runtime.compareAndSwapAlias / forget` | Alias mutation with compare-and-swap. |
+| `runtime.authorizeExecute(handle, uri)` | An execution permit carrying no readable bytes. |
+| `runtime.grant / revokeGoverned` | Delegation and revocation through the witnessed path. |
+| `runtime.sealEpoch(handle, uri, key, commitments)` | Seal an epoch into a signed receipt. |
+| `runtime.witnessSequence` / `.witnessChainHash` / `.witnessRecordCount` | Witness log state. |
+| `runtime.verifyWitnessChain()` | Keyless hash-chain integrity check over its own log. |
+| `runtime.witnessDigests()` | Keyless per-record SHA-256 digests, concatenated. |
+| `ContextRuntime.capacities` | The compiled-in slot counts. |
+| `Rights.forOperation(name)` / `.forOperations(names)` / `.fromNames(names)` | Rights sets. |
+| `new EpochCommitments(namespaceRoot, rvfIdentity, policyHash, detailRoot)` | The four 32-byte epoch roots. |
+
+Each governed result carries `witnessSequence`, the sequence at which the decision was
+recorded.
+
+### Receipt verification
+
+| Export | Purpose |
+| --- | --- |
+| `SignedReceipt.decode(bytes)` / `.toBytes()` | Canonical receipt encoding. |
+| `receipt.receiptId` / `.signerId` / `.signature` | Identity fields. |
+| `receipt.epochId` / `.firstSequence` / `.lastSequence` / `.recordCount` | Epoch coverage. |
+| `receipt.witnessRoot` / `.namespaceRoot` / `.policyHash` / `.previousReceipt` | Commitments. |
+| `receipt.verifySignature(key)` | Keyed MAC check. Not third-party verifiable. |
+| `receipt.verifyGenesis(key)` | MAC check plus a well-formed genesis check. |
+| `receipt.verifySuccessor(previous, key)` | MAC check on both plus the continuity link. |
 
 TypeScript declarations are generated by `wasm-bindgen` and ship with the package.
 
