@@ -111,13 +111,24 @@ impl fmt::Display for UriError {
 impl std::error::Error for UriError {}
 
 fn reject_forbidden_octets(value: &str) -> Result<(), UriError> {
-    if !value.is_ascii() {
+    // One pass collecting three verdicts. The verdicts are ranked after the
+    // scan rather than during it, so which error a caller sees never depends on
+    // which forbidden byte happens to appear first.
+    let mut non_ascii = false;
+    let mut percent = false;
+    let mut fragment = false;
+    for &byte in value.as_bytes() {
+        non_ascii |= !byte.is_ascii();
+        percent |= byte == b'%';
+        fragment |= byte == b'#';
+    }
+    if non_ascii {
         return Err(UriError::NonAscii);
     }
-    if value.as_bytes().contains(&b'%') {
+    if percent {
         return Err(UriError::PercentEncodingNotAllowed);
     }
-    if value.as_bytes().contains(&b'#') {
+    if fragment {
         return Err(UriError::FragmentNotAllowed);
     }
     Ok(())
@@ -151,6 +162,18 @@ impl Authority {
     /// or contains credentials, a port, percent encoding, or non-ASCII bytes.
     pub fn new(value: &str) -> Result<Self, UriError> {
         reject_forbidden_octets(value)?;
+        Self::new_prevalidated(value)
+    }
+
+    /// Constructs without re-scanning for globally forbidden octets.
+    ///
+    /// [`RuvUri::from_str`] validates the whole input with
+    /// [`reject_forbidden_octets`] before it splits on `/`, so every component it
+    /// derives is already known to be ASCII and free of `%` and `#`. Re-scanning
+    /// each component repeats that work once per component. The public `new`
+    /// constructors keep the scan, because their callers arrive with text nobody
+    /// has checked.
+    fn new_prevalidated(value: &str) -> Result<Self, UriError> {
         if value.as_bytes().contains(&b'@') {
             return Err(UriError::CredentialsNotAllowed);
         }
@@ -224,6 +247,18 @@ impl TenantId {
     /// 63 bytes or contains a globally forbidden URI byte.
     pub fn new(value: &str) -> Result<Self, UriError> {
         reject_forbidden_octets(value)?;
+        Self::new_prevalidated(value)
+    }
+
+    /// Constructs without re-scanning for globally forbidden octets.
+    ///
+    /// [`RuvUri::from_str`] validates the whole input with
+    /// [`reject_forbidden_octets`] before it splits on `/`, so every component it
+    /// derives is already known to be ASCII and free of `%` and `#`. Re-scanning
+    /// each component repeats that work once per component. The public `new`
+    /// constructors keep the scan, because their callers arrive with text nobody
+    /// has checked.
+    fn new_prevalidated(value: &str) -> Result<Self, UriError> {
         if !is_slug(value) {
             return Err(UriError::InvalidTenant);
         }
@@ -278,6 +313,18 @@ impl SubjectId {
     /// 63 bytes or contains a globally forbidden URI byte.
     pub fn new(value: &str) -> Result<Self, UriError> {
         reject_forbidden_octets(value)?;
+        Self::new_prevalidated(value)
+    }
+
+    /// Constructs without re-scanning for globally forbidden octets.
+    ///
+    /// [`RuvUri::from_str`] validates the whole input with
+    /// [`reject_forbidden_octets`] before it splits on `/`, so every component it
+    /// derives is already known to be ASCII and free of `%` and `#`. Re-scanning
+    /// each component repeats that work once per component. The public `new`
+    /// constructors keep the scan, because their callers arrive with text nobody
+    /// has checked.
+    fn new_prevalidated(value: &str) -> Result<Self, UriError> {
         if !is_slug(value) {
             return Err(UriError::InvalidSubjectId);
         }
@@ -448,6 +495,18 @@ impl PathSegment {
     /// set.
     pub fn new(value: &str) -> Result<Self, UriError> {
         reject_forbidden_octets(value)?;
+        Self::new_prevalidated(value)
+    }
+
+    /// Constructs without re-scanning for globally forbidden octets.
+    ///
+    /// [`RuvUri::from_str`] validates the whole input with
+    /// [`reject_forbidden_octets`] before it splits on `/`, so every component it
+    /// derives is already known to be ASCII and free of `%` and `#`. Re-scanning
+    /// each component repeats that work once per component. The public `new`
+    /// constructors keep the scan, because their callers arrive with text nobody
+    /// has checked.
+    fn new_prevalidated(value: &str) -> Result<Self, UriError> {
         if value.is_empty() {
             return Err(UriError::EmptyPathSegment);
         }
@@ -799,10 +858,12 @@ impl FromStr for RuvUri {
             return Err(UriError::EmptyPathSegment);
         }
 
-        let authority = Authority::new(components[0])?;
-        let tenant = TenantId::new(components[1])?;
+        // reject_forbidden_octets ran over the whole input above, so the
+        // components carved out of it need no second scan.
+        let authority = Authority::new_prevalidated(components[0])?;
+        let tenant = TenantId::new_prevalidated(components[1])?;
         let subject_kind = components[2].parse()?;
-        let subject_id = SubjectId::new(components[3])?;
+        let subject_id = SubjectId::new_prevalidated(components[3])?;
         let collection = components[4].parse()?;
         let path_count = component_count - 5;
         if path_count > MAX_PATH_SEGMENTS {
@@ -816,7 +877,7 @@ impl FromStr for RuvUri {
         }
         let path = path_parts
             .iter()
-            .map(|part| PathSegment::new(part))
+            .map(|part| PathSegment::new_prevalidated(part))
             .collect::<Result<Vec<_>, _>>()?;
         let (revision, view) = parse_query(query)?;
 

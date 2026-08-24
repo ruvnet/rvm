@@ -309,18 +309,22 @@ impl ContextScope {
     fn fingerprint(&self) -> u64 {
         let mut hasher = Sha256::new();
         hasher.update(b"RUV-CONTEXT-SCOPE-V1");
-        hasher.update(self.authority.to_string().as_bytes());
+        // `Display` for each of these is exactly `f.write_str(self.as_str())`,
+        // so `as_str` hashes byte-identical input to the `to_string` this
+        // replaces -- without allocating a String per component to read it.
+        // `fingerprint_is_unchanged_by_the_as_str_rewrite` pins that.
+        hasher.update(self.authority.as_str().as_bytes());
         hasher.update([0]);
-        hasher.update(self.tenant.to_string().as_bytes());
+        hasher.update(self.tenant.as_str().as_bytes());
         hasher.update([0]);
         hasher.update(self.subject.kind().as_str().as_bytes());
         hasher.update([0]);
         hasher.update(self.subject.id().as_str().as_bytes());
         hasher.update([0]);
-        hasher.update(self.collection.to_string().as_bytes());
+        hasher.update(self.collection.as_str().as_bytes());
         for segment in &self.path_prefix {
             hasher.update([0xff]);
-            hasher.update(segment.to_string().as_bytes());
+            hasher.update(segment.as_str().as_bytes());
         }
         hasher.update([self.views.bits()]);
         let digest = hasher.finalize();
@@ -1127,6 +1131,36 @@ mod tests {
                 ContextScope::from_uri(&uri("docs", None, false), ContextViewMask::ALL),
             ),
             Err(ContextError::AccessDenied)
+        );
+    }
+}
+
+#[cfg(test)]
+mod fingerprint_stability_tests {
+    use super::*;
+    use crate::uri::RuvUri;
+
+    fn fp(uri: &str) -> u64 {
+        let parsed = RuvUri::parse(uri).expect("parses");
+        let mask = ContextViewMask::from_bits(0b0000_0111).expect("mask");
+        ContextScope::from_uri(&parsed, mask).fingerprint()
+    }
+
+    /// A scope fingerprint becomes a capability badge, so its bytes are an
+    /// identity, not an implementation detail. These values were captured
+    /// before `fingerprint` moved from `to_string` to `as_str`; they must not
+    /// move again without a deliberate, versioned change to the hash input.
+    #[test]
+    fn fingerprint_is_unchanged_by_the_as_str_rewrite() {
+        assert_eq!(
+            fp("ruv://context.example/acme/agent/researcher/memory"),
+            0xded4_a8a4_26a1_881d,
+            "bare-collection scope fingerprint changed"
+        );
+        assert_eq!(
+            fp("ruv://context.example/acme/agent/researcher/resources/projects/orion/spec"),
+            0x668d_962c_6040_c9ea,
+            "path-prefixed scope fingerprint changed"
         );
     }
 }
