@@ -1,0 +1,14 @@
+[package]
+name = "rvm-coreml"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Typed governed Core ML inference contract for HostedIOS"
+keywords = ["ios", "coreml", "machine-learning", "capability"]
+categories = ["api-bindings", "science"]
+
+[dependencies]
+rvm-host-ios = { workspace = true }

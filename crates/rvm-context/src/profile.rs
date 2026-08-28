@@ -432,10 +432,10 @@ impl VerifiedContextProfile {
         trust: ProfileTrust,
     ) -> Result<Self, ContextProfileError> {
         let actual = sha256(data);
-        if actual != report.rvf_identity || actual != *expected_identity.as_bytes() {
+        if actual != *report.rvf_identity() || actual != *expected_identity.as_bytes() {
             return Err(ContextProfileError::IdentityMismatch);
         }
-        if !report.ok {
+        if !report.is_ok() {
             return Err(ContextProfileError::UnverifiedRvf);
         }
         let segments = walk(data).map_err(|_| ContextProfileError::InvalidRvf)?;
@@ -451,7 +451,7 @@ impl VerifiedContextProfile {
         }
         if trust == ProfileTrust::TrustedSignature {
             let signature_passed = profile_segment.header.is_signed()
-                && report.records.iter().any(|record| {
+                && report.records().iter().any(|record| {
                     record.check == CheckKind::Signature
                         && record.outcome == Outcome::Pass
                         && record.segment_index == Some(profile_segment.index)

@@ -165,7 +165,7 @@ mod tests {
 
         let log = WitnessLog::<64>::new();
         let report = verify(&data, &testkit::lenient_options(), &log, CTX).unwrap();
-        assert!(!report.ok);
+        assert!(!report.is_ok());
     }
 
     #[test]
@@ -185,8 +185,8 @@ mod tests {
         let log = WitnessLog::<64>::new();
         let report = verify(&data, &testkit::lenient_options(), &log, CTX).unwrap();
 
-        assert!(report.ok);
-        assert_eq!(log.total_emitted(), report.records.len() as u64);
+        assert!(report.is_ok());
+        assert_eq!(log.total_emitted(), report.records().len() as u64);
     }
 
     #[test]
@@ -196,8 +196,8 @@ mod tests {
         // The strict posture refuses the unsigned executable.
         let report = verify(&data, &VerifyOptions::default(), &log, CTX).unwrap();
 
-        assert!(!report.ok);
-        assert_eq!(log.total_emitted(), report.records.len() as u64);
+        assert!(!report.is_ok());
+        assert_eq!(log.total_emitted(), report.records().len() as u64);
         let rejected = (0..log.len())
             .filter_map(|i| log.get(i))
             .filter(|r| r.action_kind == rvm_types::ActionKind::ProofRejected as u8)

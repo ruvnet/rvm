@@ -5,14 +5,16 @@
 //! keep that true under later refactoring is to make it a type. Every entry
 //! point in `rvm-host` and `rvm-launch` that can lead to execution takes a
 //! [`VerifiedPackage`], and the only way to obtain one is
-//! [`VerifiedPackage::from_report`], which refuses a report whose `ok` is
-//! false. A caller cannot start an unverified artifact by forgetting a check,
-//! because there is no unverified value to pass.
+//! [`VerifiedPackage::from_report`], which refuses a report whose verification
+//! failed. The report's trust-bearing fields are opaque outside `rvm-rvf`, so
+//! safe downstream code cannot fabricate a pass or substitute payload hashes.
+//! A caller cannot start an unverified artifact by forgetting a check because
+//! there is no unverified value to pass.
 
 use alloc::vec::Vec;
 use rvm_rvf::{
     format::SEG_TYPE_WASM, CapabilityClass, CapabilityMapping, VerificationReport,
-    VerifiedExecutable,
+    VerifiedExecutable, VerifiedMetadata,
 };
 
 use crate::error::{HostError, HostResult};
@@ -28,6 +30,8 @@ pub struct VerifiedPackage {
     byte_length: u64,
     segment_count: usize,
     executables: Vec<VerifiedExecutable>,
+    verified_metadata: Vec<VerifiedMetadata>,
+    trusted_root_signer: Option<[u8; 32]>,
     capabilities: CapabilityMapping,
 }
 
@@ -40,15 +44,17 @@ impl VerifiedPackage {
     /// caller has already witnessed those failures through
     /// [`rvm_rvf::emit_report`]; this is the refusal to act on them.
     pub fn from_report(report: &VerificationReport) -> HostResult<Self> {
-        if !report.ok {
+        if !report.is_ok() {
             return Err(HostError::Unverified);
         }
         Ok(Self {
-            identity: report.rvf_identity,
-            byte_length: report.byte_length,
-            segment_count: report.segment_count,
-            executables: report.executables.clone(),
-            capabilities: report.capabilities.clone(),
+            identity: *report.rvf_identity(),
+            byte_length: report.byte_length(),
+            segment_count: report.segment_count(),
+            executables: report.executables().to_vec(),
+            verified_metadata: report.verified_metadata().to_vec(),
+            trusted_root_signer: report.trusted_root_signer(),
+            capabilities: report.capabilities().clone(),
         })
     }
 
@@ -84,7 +90,59 @@ impl VerifiedPackage {
     pub fn accepts_wasm(&self, module: &[u8]) -> bool {
         self.executables
             .iter()
-            .any(|entry| entry.segment_type == SEG_TYPE_WASM && entry.matches(module))
+            .any(|entry| entry.segment_type() == SEG_TYPE_WASM && entry.matches(module))
+    }
+
+    /// Whether `module` exactly matches a WASM payload whose signature
+    /// independently verified against a trusted key.
+    ///
+    /// Production hosted runtimes use this stronger gate so a generic
+    /// development report that allowed unsigned execution cannot be promoted
+    /// into a distributable agent merely by wrapping it in `VerifiedPackage`.
+    #[must_use]
+    pub fn accepts_trusted_signed_wasm(&self, module: &[u8]) -> bool {
+        self.executables.iter().any(|entry| {
+            entry.segment_type() == SEG_TYPE_WASM
+                && entry.has_trusted_signature()
+                && entry.matches(module)
+        })
+    }
+
+    /// Whether `module` exactly matches a WASM payload signed by `signer`.
+    #[must_use]
+    pub fn accepts_wasm_signed_by(&self, module: &[u8], signer: &[u8; 32]) -> bool {
+        self.executables.iter().any(|entry| {
+            entry.segment_type() == SEG_TYPE_WASM
+                && entry.trusted_signer().as_ref() == Some(signer)
+                && entry.matches(module)
+        })
+    }
+
+    /// Whether `metadata` exactly matches a `META` payload whose content hash
+    /// and Ed25519 signature both verified against a trusted key.
+    ///
+    /// Platform adapters use this before parsing fine-grained policy. It keeps
+    /// unsigned metadata from widening sensor, network, model, or GPU rights.
+    #[must_use]
+    pub fn accepts_signed_metadata(&self, metadata: &[u8]) -> bool {
+        self.verified_metadata
+            .iter()
+            .any(|entry| entry.matches(metadata))
+    }
+
+    /// Trusted signer of exact metadata bytes, when one was verified.
+    #[must_use]
+    pub fn trusted_metadata_signer(&self, metadata: &[u8]) -> Option<[u8; 32]> {
+        self.verified_metadata
+            .iter()
+            .find(|entry| entry.matches(metadata))
+            .map(VerifiedMetadata::trusted_signer)
+    }
+
+    /// Trusted signer of the selected root manifest, when one was verified.
+    #[must_use]
+    pub const fn trusted_root_signer(&self) -> Option<[u8; 32]> {
+        self.trusted_root_signer
     }
 
     /// The classes this package declared and RVM will issue.
@@ -120,11 +178,11 @@ mod tests {
     fn a_passing_report_becomes_a_package() {
         let data = testkit::container_declaring("memory,clock");
         let report = verify(&data, &testkit::lenient_options()).unwrap();
-        assert!(report.ok, "{:?}", report.failures());
+        assert!(report.is_ok(), "{:?}", report.failures());
 
         let pkg = VerifiedPackage::from_report(&report).unwrap();
-        assert_eq!(pkg.identity(), &report.rvf_identity);
-        assert_eq!(pkg.byte_length(), report.byte_length);
+        assert_eq!(pkg.identity(), report.rvf_identity());
+        assert_eq!(pkg.byte_length(), report.byte_length());
         assert!(pkg.is_granted(CapabilityClass::Clock));
         assert!(!pkg.is_granted(CapabilityClass::Network));
         assert_eq!(pkg.denied_classes().len(), 13);
@@ -136,7 +194,7 @@ mod tests {
         // there is no way to get a VerifiedPackage out of that report.
         let data = testkit::container_with_wasm("memory");
         let report = verify(&data, &VerifyOptions::default()).unwrap();
-        assert!(!report.ok);
+        assert!(!report.is_ok());
         assert!(report.first_failure(CheckKind::ExecutableSigned).is_some());
 
         assert_eq!(
@@ -170,7 +228,16 @@ mod tests {
         ];
 
         assert!(pkg.accepts_wasm(&testkit::MINIMAL_WASM));
+        assert!(!pkg.accepts_trusted_signed_wasm(&testkit::MINIMAL_WASM));
         assert!(!pkg.accepts_wasm(&substitute));
+    }
+
+    #[test]
+    fn unsigned_metadata_is_never_accepted_as_signed_policy() {
+        let data = testkit::container_declaring("memory");
+        let report = verify(&data, &testkit::lenient_options()).unwrap();
+        let pkg = VerifiedPackage::from_report(&report).unwrap();
+        assert!(!pkg.accepts_signed_metadata(b"rvf.capabilities=memory"));
     }
 
     #[test]

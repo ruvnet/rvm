@@ -65,6 +65,17 @@ fn a_tampered_payload_fails_its_content_hash() {
 }
 
 #[test]
+fn a_reserved_content_hash_algorithm_is_refused_not_guessed() {
+    let mut data = manifest_only();
+    data[0x20] = 3;
+    data[0x28..0x38].fill(0);
+
+    let report = verify(&data, &VerifyOptions::default()).unwrap();
+    let failure = report.first_failure(CheckKind::ContentHash).unwrap();
+    assert_eq!(failure.detail, DetailCode::UnsupportedContentHashAlgorithm);
+}
+
+#[test]
 fn an_unsigned_executable_is_refused_by_default() {
     let mut data = manifest_only();
     data.extend(unsigned_segment(SEG_TYPE_WASM, b"\0asm", 5));
@@ -91,6 +102,7 @@ fn an_unsigned_executable_is_permitted_for_development_builds() {
         record_for(&report, CheckKind::ExecutableSigned).outcome,
         Outcome::Skip
     );
+    assert!(!report.executables[0].has_trusted_signature());
 }
 
 #[test]
@@ -106,6 +118,43 @@ fn a_signed_executable_verifies_against_its_key() {
     let sig = record_for(&report, CheckKind::Signature);
     assert_eq!(sig.outcome, Outcome::Pass);
     assert_eq!(sig.detail, DetailCode::SignatureVerifies);
+    assert!(report.executables[0].has_trusted_signature());
+}
+
+#[test]
+fn only_trusted_signed_metadata_becomes_policy_eligible() {
+    let kp = TestKeypair::deterministic(19);
+    let policy = b"rvf.capabilities=sensor,gpu\nrvf.ios-capabilities=camera.read,gpu.execute";
+    let mut data = manifest_only();
+    data.extend(signed_segment(SEG_TYPE_META, policy, 5, &kp));
+
+    let trusted = verify(&data, &VerifyOptions::with_trusted_keys(vec![kp.public])).unwrap();
+    assert!(trusted.ok, "{:?}", trusted.failures());
+    assert_eq!(trusted.verified_metadata.len(), 1);
+    assert!(trusted.verified_metadata[0].matches(policy));
+
+    let untrusted = verify(&data, &VerifyOptions::default()).unwrap();
+    assert!(
+        untrusted.ok,
+        "a skipped non-executable signature does not make policy trusted"
+    );
+    assert!(untrusted.verified_metadata.is_empty());
+}
+
+#[test]
+fn duplicate_segment_id_cannot_lend_a_signature_to_unsigned_metadata() {
+    let key = TestKeypair::deterministic(20);
+    let signed_policy = b"rvf.capabilities=clock";
+    let unsigned_policy = b"rvf.capabilities=gpu,sensor";
+    let mut data = manifest_only();
+    data.extend(signed_segment(SEG_TYPE_META, signed_policy, 5, &key));
+    data.extend(unsigned_segment(SEG_TYPE_META, unsigned_policy, 5));
+
+    let report = verify(&data, &VerifyOptions::with_trusted_keys(vec![key.public])).unwrap();
+    assert!(report.ok, "{:?}", report.failures());
+    assert_eq!(report.verified_metadata.len(), 1);
+    assert!(report.verified_metadata[0].matches(signed_policy));
+    assert!(!report.verified_metadata[0].matches(unsigned_policy));
 }
 
 #[test]
@@ -351,8 +400,16 @@ fn detail_codes_all_render() {
         DetailCode::IdentityMismatch,
         DetailCode::RootManifestFound,
         DetailCode::RootManifestMissing,
+        DetailCode::RootPageIntegrityValid,
+        DetailCode::RootPageBindingMatches,
+        DetailCode::RootPageBindingMismatch,
+        DetailCode::RootPageUnsigned,
+        DetailCode::RootSignerBindingMatches,
+        DetailCode::RootSignerBindingMismatch,
+        DetailCode::RootSignerBindingUnavailable,
         DetailCode::ContentHashMatches,
         DetailCode::ContentHashMismatch,
+        DetailCode::UnsupportedContentHashAlgorithm,
         DetailCode::ExecutableIsSigned,
         DetailCode::ExecutableIsUnsigned,
         DetailCode::UnsignedExecutablePermitted,

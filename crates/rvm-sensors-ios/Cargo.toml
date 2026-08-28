@@ -1,0 +1,14 @@
+[package]
+name = "rvm-sensors-ios"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Typed governed camera, LiDAR, motion, and BLE contracts for HostedIOS"
+keywords = ["ios", "lidar", "camera", "bluetooth", "sensors"]
+categories = ["api-bindings", "hardware-support"]
+
+[dependencies]
+rvm-host-ios = { workspace = true }

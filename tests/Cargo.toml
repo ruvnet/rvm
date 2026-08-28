@@ -22,6 +22,12 @@ rvm-wasm = { workspace = true }
 rvm-security = { workspace = true }
 rvm-kernel = { workspace = true }
 rvm-gpu = { workspace = true }
+rvm-rvf = { workspace = true, features = ["std", "testkit"] }
+rvm-host = { workspace = true, features = ["std"] }
+rvm-host-ios = { workspace = true }
+rvm-metal-ios = { workspace = true }
+rvm-coreml = { workspace = true }
+rvm-sensors-ios = { workspace = true }
 
 [features]
 ed25519 = ["rvm-proof/ed25519"]

@@ -145,7 +145,7 @@ mod tests {
             WitnessContext::new(1, 1),
         )
         .unwrap();
-        assert!(!strict.ok);
+        assert!(!strict.is_ok());
         assert_eq!(
             VerifiedPackage::from_report(&strict),
             Err(HostError::Unverified)

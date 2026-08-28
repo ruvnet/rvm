@@ -28,6 +28,10 @@ pub enum RvfError {
     PayloadOutOfBounds,
     /// A segment declares a payload larger than the format permits.
     PayloadTooLarge,
+    /// A segment declares more than the format's maximum 63 alignment bytes.
+    InvalidAlignmentPadding,
+    /// Bytes declared as alignment padding are not all zero.
+    NonZeroAlignmentPadding,
     /// A signature footer is structurally invalid or internally inconsistent.
     MalformedFooter,
     /// A segment sets `SIGNED` but its footer declares no signature.
@@ -40,6 +44,12 @@ pub enum RvfError {
     TooManySegments,
     /// The walk failed to advance, which would otherwise loop forever.
     NoForwardProgress,
+    /// A trailing Level-0 root page has the right magic but a bad CRC32C.
+    RootManifestChecksumMismatch,
+    /// A trailing Level-0 root page uses an unsupported format version.
+    UnsupportedRootManifestVersion(u16),
+    /// A trailing Level-0 root page has inconsistent fields.
+    MalformedRootManifest,
     /// The container requires a capability class RVM cannot represent.
     ///
     /// ADR-286 §3 requires refusal rather than degradation: an agent that
@@ -65,6 +75,12 @@ impl fmt::Display for RvfError {
                 )
             }
             Self::PayloadTooLarge => write!(f, "segment payload exceeds the format maximum"),
+            Self::InvalidAlignmentPadding => {
+                write!(f, "segment alignment padding exceeds 63 bytes")
+            }
+            Self::NonZeroAlignmentPadding => {
+                write!(f, "segment alignment padding contains non-zero bytes")
+            }
             Self::MalformedFooter => write!(f, "signature footer is malformed"),
             Self::SignedFlagWithoutFooter => {
                 write!(f, "segment sets SIGNED but carries no signature")
@@ -73,6 +89,15 @@ impl fmt::Display for RvfError {
             Self::TrailingBytes => write!(f, "trailing bytes are not a segment header"),
             Self::TooManySegments => write!(f, "container declares too many segments"),
             Self::NoForwardProgress => write!(f, "segment does not advance the read cursor"),
+            Self::RootManifestChecksumMismatch => {
+                write!(f, "Level-0 root manifest CRC32C does not match")
+            }
+            Self::UnsupportedRootManifestVersion(version) => {
+                write!(f, "unsupported Level-0 root manifest version {version}")
+            }
+            Self::MalformedRootManifest => {
+                write!(f, "Level-0 root manifest fields are inconsistent")
+            }
             Self::UnsupportedCapability(c) => {
                 write!(f, "RVM cannot represent capability class {c}")
             }
@@ -87,7 +112,8 @@ impl From<RvfError> for RvmError {
         match e {
             RvfError::UnsupportedCapability(_)
             | RvfError::UnknownCapability
-            | RvfError::UnsupportedVersion(_) => RvmError::Unsupported,
+            | RvfError::UnsupportedVersion(_)
+            | RvfError::UnsupportedRootManifestVersion(_) => RvmError::Unsupported,
             RvfError::CapabilityTableFull | RvfError::TooManySegments => {
                 RvmError::ResourceLimitExceeded
             }
@@ -114,12 +140,17 @@ mod tests {
             RvfError::UnsupportedVersion(9),
             RvfError::PayloadOutOfBounds,
             RvfError::PayloadTooLarge,
+            RvfError::InvalidAlignmentPadding,
+            RvfError::NonZeroAlignmentPadding,
             RvfError::MalformedFooter,
             RvfError::SignedFlagWithoutFooter,
             RvfError::NoSegments,
             RvfError::TrailingBytes,
             RvfError::TooManySegments,
             RvfError::NoForwardProgress,
+            RvfError::RootManifestChecksumMismatch,
+            RvfError::UnsupportedRootManifestVersion(9),
+            RvfError::MalformedRootManifest,
             RvfError::UnsupportedCapability(CapabilityClass::Clipboard),
             RvfError::UnknownCapability,
             RvfError::CapabilityTableFull,

@@ -58,12 +58,21 @@
 //!
 //! ## Format compatibility
 //!
-//! [`format`] restates the RVF v1 wire layout rather than depending on
-//! RuVector's `rvf-types` / `rvf-wire` / `rvf-crypto`, which are `std`-oriented
-//! and live in a separate workspace. Every constant, offset, hash algorithm,
-//! and signature-message layout is byte-compatible with those crates, and the
-//! module's tests build containers from the same recipe the RuVector writer
-//! uses.
+//! [`format`] restates the RVF v1 layout rather than depending on RuVector's
+//! `std`-oriented RVF workspace. The reader accepts both v1 shapes frozen by
+//! RuVector ADR-009: packed `rvf-runtime` segments using the legacy
+//! algorithm-zero CRC rotation, and aligned `rvf-wire`/RVForge segments using
+//! algorithms one or two. It also recognizes Level-0 pages both inside a wire
+//! MANIFEST payload and appended by RVForge. Compatibility tests pin bytes and
+//! identities emitted by the canonical writers; reserved or unknown hash
+//! algorithms are refused rather than guessed.
+//!
+//! The current RVForge `MANIFEST` payload is not a canonical directory of all
+//! segments. A valid root-page pointer plus matching publisher signatures
+//! therefore binds the selected manifest, but does not by itself prevent a
+//! same-signer, same-length segment remix. A loading host must also pin the
+//! SHA-256 identity of the complete artifact through
+//! [`VerifyOptions::expect_identity`].
 //!
 //! ## Allocation
 //!
@@ -100,14 +109,17 @@ pub mod witness;
 
 #[cfg(test)]
 mod compat_tests;
-#[cfg(test)]
-mod testkit;
+#[cfg(any(test, feature = "testkit"))]
+pub mod testkit;
 
 pub use capability::{
     declared_classes, map_declared, CapabilityClass, CapabilityMapping, RvmBinding,
     CAPABILITY_DECLARATION_KEY,
 };
-pub use container::{root_manifest, walk, ParsedSegment};
+pub use container::{
+    root_manifest, root_manifest_page, walk, ParsedSegment, RootManifestPage, ROOT_MANIFEST_MAGIC,
+    ROOT_MANIFEST_MAGIC_BYTES, ROOT_MANIFEST_SIZE,
+};
 pub use detail::DetailCode;
 pub use error::{RvfError, RvfResult};
 pub use format::{
@@ -115,11 +127,13 @@ pub use format::{
     MAX_SEGMENT_PAYLOAD, SEGMENT_ALIGNMENT, SEGMENT_HEADER_SIZE, SEGMENT_MAGIC,
     SEGMENT_MAGIC_BYTES, SEGMENT_VERSION, SEG_TYPE_PROFILE, SEG_TYPE_WITNESS,
 };
-pub use hash::{content_hash, sha256, verify_content_hash};
+pub use hash::{
+    content_hash, is_supported_content_hash, legacy_crc32_rotation_128, sha256, verify_content_hash,
+};
 pub use policy::{tally, SizePolicy, SizeTally, SizeViolation};
 pub use verify::{
     verify, CheckKind, Outcome, VerificationRecord, VerificationReport, VerifiedExecutable,
-    VerifyOptions,
+    VerifiedMetadata, VerifyOptions,
 };
 pub use witness::{action_kind_for, build_record, emit_record, emit_report, WitnessContext};
 

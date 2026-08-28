@@ -148,7 +148,7 @@ pub struct SegmentHeader {
     pub payload_length: u64,
     /// Nanosecond UNIX timestamp of segment creation.
     pub timestamp_ns: u64,
-    /// Hash algorithm: 0 CRC32C (deprecated), 1 XXH3-128, 2 SHAKE-256.
+    /// Hash algorithm: 0 runtime-v1 CRC rotation, 1 XXH3-128, 2 SHAKE-256.
     pub checksum_algo: u8,
     /// Compression: 0 none, 1 LZ4, 2 ZSTD, 3 custom.
     pub compression: u8,

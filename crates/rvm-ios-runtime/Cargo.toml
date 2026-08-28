@@ -1,0 +1,23 @@
+[package]
+name = "rvm-ios-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Bounded typed guest router for the HostedIOS RVM profile"
+keywords = ["ios", "wasm", "sandbox", "capability", "edge"]
+categories = ["virtualization", "os"]
+
+[dependencies]
+rvm-host-ios = { workspace = true }
+rvm-metal-ios = { workspace = true }
+rvm-coreml = { workspace = true }
+rvm-sensors-ios = { workspace = true }
+
+[dev-dependencies]
+rvm-host = { workspace = true, features = ["std"] }
+rvm-rvf = { workspace = true, features = ["std", "testkit"] }
+rvm-wasm-hosted = { workspace = true }
+wat = "=1.219.2"

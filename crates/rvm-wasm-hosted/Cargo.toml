@@ -1,0 +1,17 @@
+[package]
+name = "rvm-wasm-hosted"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Fuel- and memory-bounded WASM interpreter for hosted RVM targets"
+keywords = ["wasm", "interpreter", "sandbox", "ios", "edge"]
+categories = ["wasm", "virtualization"]
+
+[dependencies]
+wasmi = { workspace = true }
+
+[dev-dependencies]
+wat = "=1.219.2"

@@ -99,10 +99,10 @@ pub fn emit_report<const N: usize>(
     log: &WitnessLog<N>,
     ctx: WitnessContext,
 ) -> usize {
-    for record in &report.records {
-        let _ = log.append(build_record(record, &report.rvf_identity, ctx));
+    for record in report.records() {
+        let _ = log.append(build_record(record, report.rvf_identity(), ctx));
     }
-    report.records.len()
+    report.records().len()
 }
 
 /// Append a witness record for a single result.
@@ -272,6 +272,10 @@ mod tests {
             CheckKind::Signature,
             CheckKind::SizePolicy,
             CheckKind::CapabilityMapping,
+            CheckKind::RootPageIntegrity,
+            CheckKind::RootPageBinding,
+            CheckKind::RootPageSignature,
+            CheckKind::RootSignerBinding,
         ] {
             assert!(emits_a_record_for(check));
         }

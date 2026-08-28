@@ -1,6 +1,6 @@
 # RVM — The Virtual Machine Built for the Agentic Age
 
-[![Rust](https://img.shields.io/badge/Rust-1.77+-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/Rust-core%201.77%2B%20%7C%20workspace%20stable-orange.svg)](https://www.rust-lang.org)
 [![no_std](https://img.shields.io/badge/no__std-compatible-green.svg)](https://doc.rust-lang.org/reference/names/preludes.html)
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
 [![ADR](https://img.shields.io/badge/ADRs-index-purple.svg)](docs/adr/)
@@ -11,7 +11,7 @@
 
 ### **Agents don't fit in VMs. They need something that understands how they think.**
 
-> **19 runtime and library crates, plus integration and benchmark packages.** RVM automatically detects new [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) releases, runs its release workflow, and publishes nightly builds. See [Releases](https://github.com/ruvnet/rvm/releases) | [User Guide](userguide/) | [pi.ruv.io](https://pi.ruv.io)
+> **A modular Rust workspace with integration and benchmark packages.** RVM automatically detects new [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) releases, runs its release workflow, and publishes nightly builds. See [Releases](https://github.com/ruvnet/rvm/releases) | [User Guide](userguide/) | [pi.ruv.io](https://pi.ruv.io)
 
 > Part of the [RuVector](https://github.com/ruvnet/RuVector) ecosystem. Uses [RuVix](ruvector/crates/ruvix/) kernel primitives and [RVF](ruvector/crates/rvf/) package format. Designed for [Cognitum](https://cognitum.one) Seed, Appliance, and future chip targets.
 
@@ -32,7 +32,7 @@ structure.
 Agent swarm → [RVM Coherence Engine] → Optimal Placement → Witness Proof
                     ↑                                            │
                     └──── Agent Communication Graph ─────────────┘
-                          (< 50µs adaptive re-partitioning)
+                          (adaptive re-partitioning; benchmark evidence required)
 ```
 
 **No KVM. No Linux. No VMs. Bare-metal Rust. Built for agents.**
@@ -49,13 +49,13 @@ RVM:                ┌─A──B─┐  ┌─C─┐  D    (dynamic, agent-dr
 
 | What Agents Need | VMs / Containers | RVM |
 |-----------------|-----------------|-----|
-| Sub-millisecond spawn | Seconds to boot | < 10µs partition switch |
+| Low-latency spawn | Seconds to boot | Lightweight partition switching; target-specific benchmark required |
 | Dense, shifting comms graph | Static NIC-to-NIC | Graph-weighted CommEdges, auto-rebalanced |
 | Shared context with isolation | All or nothing | Capability-gated shared memory, proof-checked |
 | Per-agent fault containment | Whole-VM crash | F1–F4 graduated rollback, no reboot needed |
-| Auditable every action | External log bolted on | 64-byte witness on every syscall, hash-chained |
+| Auditable privileged actions | External log bolted on | Bounded, hash-chained witness records |
 | Hibernate and reconstruct | Kill and restart | Dormant tier → rebuilt from witness log |
-| Run on 64KB MCUs | Needs gigabytes | Seed profile: 64KB–1MB, capability-enforced |
+| Run on constrained MCUs | Needs gigabytes | Seed profile; target-specific memory and isolation validation required |
 
 ---
 
@@ -87,17 +87,17 @@ failure classes F1–F3).
 **Deterministic Multi-Tenant Edge Orchestration.** Existing edge orchestrators
 rely on Linux-based VMs or containers, inheriting scheduling unpredictability
 and no guarantee of bounded latency with provable isolation. RVM enables
-scenarios such as an autonomous vehicle where safety-critical sensor-fusion
-agents (Reflex mode, < 10 µs switch) are strictly isolated from low-priority
-infotainment agents, or a smart factory floor running hard real-time PLC
-control loops safely alongside ML inference agents.
+scenarios such as an autonomous vehicle where latency-sensitive sensor-fusion
+agents are separated from lower-priority infotainment agents, or a smart
+factory floor coordinating control and inference workloads. Exact switching,
+isolation, and deadline properties remain target-specific measured gates.
 
-**High-Assurance Security on Extreme Microcontrollers.** Through its Seed
+**Capability Governance on Constrained Microcontrollers.** Through its Seed
 hardware profile (ADR-138), RVM brings capability-enforced isolation,
 proof-gated execution, and witness attestation to deeply constrained IoT
-devices with as little as 64 KB of RAM. Delivering this level of zero-trust,
-auditable security on microcontroller-class hardware is a novel capability not
-provided by any existing embedded operating system.
+devices. Memory footprint and isolation strength must be measured on each
+target; the Seed profile does not make HostedIOS or unvalidated hardware
+high-assurance by implication.
 
 ---
 
@@ -177,12 +177,18 @@ Layer 0: Machine Entry (assembly, <500 LoC)
 | `rvm-coherence` | Unified coherence engine: graph, mincut, scoring, pressure, adaptive, pluggable backends, edge decay |
 | `rvm-boot` | Deterministic 7-phase boot sequence with witness gating |
 | `rvm-wasm` | Optional WebAssembly guest runtime |
+| `rvm-wasm-hosted` | Fuel-, memory-, instance-, and host-call-bounded interpreter with no ambient WASI |
 | `rvm-security` | Unified security gate: capability check + proof verification + witness log |
 | `rvm-kernel` | Full integration: coherence engine, IPC→graph feeding, scheduler, split/merge, security gates, tier management |
 | `rvm-gpu` | GPU compute subsystem: device, context, kernel, buffer, queue, budget (optional, feature-gated) |
 | `rvm-rvf` | RVF loader for RVForge packages: manifest verification, per-segment verification, capability mapping, identity preservation ([ADR-155](docs/adr/ADR-155-rvf-execution-contract.md)) |
 | `rvm-anchor` | Verifies external evaluation receipts and anchors their commitments into the RVM witness chain ([ADR-156](docs/adr/ADR-156-external-receipt-anchoring.md)) |
 | `rvm-host` | Per-OS adapters and isolation mechanisms: picks the strongest available isolation, places the agent, spawns it |
+| `rvm-host-ios` | Signer-bound HostedIOS policy, dynamic platform gates, governed dispatch, and full-content receipts ([ADR-159](docs/adr/ADR-159-hosted-ios-edge-runtime.md)) |
+| `rvm-ios-runtime` | Bounded one-shot generational descriptors and aggregate typed sensor/Metal/Core ML routing for HostedIOS guests |
+| `rvm-metal-ios` | Typed allowlisted Metal dispatch contract for an app-owned native bridge |
+| `rvm-coreml` | Typed compiled-model and requested-compute-policy contract for Core ML |
+| `rvm-sensors-ios` | Typed camera, ARKit LiDAR/depth, Core Motion, and BLE contracts |
 | `rvm-launch` | Instance lifecycle over the adapters: `inspect`, `verify`, run, suspend, resume, checkpoint, witness, terminate ([ADR-289](https://github.com/ruvnet/RuVector/tree/main/docs/adr)) |
 | `rvm-context` | Capability-governed `ruv://` names, immutable RVF revisions, CAS aliases, progressive views, and epoch receipts ([ADR-157](docs/adr/ADR-157-ruv-context-namespace.md)) |
 | `rvm-context-service` | Encrypted REDB persistence, exact-scope RuVector retrieval, receipt draining, canonical RVF compilation, and TLS/MCP/CLI hosting ([ADR-158](docs/adr/ADR-158-ruv-context-hosted-service.md)) |
@@ -201,17 +207,58 @@ rvm-types (foundation, no deps)
     ├── rvm-coherence ← rvm-partition + rvm-sched [OPTIONAL]
     ├── rvm-boot ← rvm-hal + rvm-partition + rvm-witness + rvm-sched + rvm-memory
     ├── rvm-wasm ← rvm-partition + rvm-cap + rvm-witness [OPTIONAL]
+    ├── rvm-wasm-hosted ← wasmi [HOSTED INTERPRETER]
     ├── rvm-security ← rvm-witness
     ├── rvm-gpu
     ├── rvm-rvf ← rvm-cap + rvm-witness
     ├── rvm-anchor ← rvm-witness
     ├── rvm-host ← rvm-cap + rvm-witness + rvm-partition + rvm-wasm + rvm-rvf
+    ├── rvm-host-ios ← rvm-host + rvm-rvf + rvm-wasm-hosted
+    │   ├── rvm-metal-ios
+    │   ├── rvm-coreml
+    │   ├── rvm-sensors-ios
+    │   └── rvm-ios-runtime ← typed crates + rvm-host-ios
     ├── rvm-launch ← rvm-witness + rvm-wasm + rvm-rvf + rvm-host
     ├── rvm-context ← rvm-cap + rvm-witness + rvm-proof + rvm-rvf
     └── rvm-kernel ← rvm-hal + rvm-cap + rvm-witness + rvm-proof +
                      rvm-partition + rvm-sched + rvm-memory + rvm-coherence +
                      rvm-boot + rvm-wasm + rvm-security + rvm-gpu
 ```
+
+### HostedIOS boundary
+
+Stock iOS remains the security and hardware authority. `rvm-host-ios` adds an
+application-level, default-deny policy boundary for signed RVF agents; it does
+not claim an RVM hardware partition, IOMMU control, measured boot, exact Neural
+Engine placement, hard real-time execution, or background liveness. A native
+app must assert `EmbeddedAppBundle`, admit the exact app-bundled RVF identity,
+and route protected Apple-framework operations through `rvm-ios-runtime` and
+the typed adapters for the receipt trail to cover them. Rust authenticates the
+origin assertion but cannot inspect the native bundle/code signature. Guest
+descriptors are bounded, one-shot, and generational. Network, logical-memory,
+and guest-clock scopes do
+not yet have typed guest routes and fail closed. Requested durations are
+admission limits plus post-completion checks, not native callback cancellation
+or preemption. Core ML policy records allowed compute units, never proof of
+Neural Engine placement. Camera/LiDAR/IMU also require re-sampled host
+assertions of explicit session consent and an active recording indicator; the
+native app remains responsible for making those assertions true.
+
+Operation receipts and version-2 execution seals are HMAC-bound in memory.
+They detect mutation and, when a terminal seal is retained, suffix truncation;
+preventing replay of an older complete chain and valid old seal still requires
+a native durable monotonic/external anchor. The Rust target builds and software
+tests are not physical-iPhone evidence. Swift/C Apple-framework bindings,
+Keychain persistence, App Review 2.5.14 consent and capture indication, and
+on-device profiling remain native integration gates. See
+[ADR-159](docs/adr/ADR-159-hosted-ios-edge-runtime.md) for the exact policy,
+WASM, receipt, App Store, and physical-device evidence contracts.
+
+The checked-in RVF golden tests cover packed runtime-v1 and the supported
+Forge Level-0 shape. They do not turn current upstream RVForge output into a
+HostedIOS agent: its capability `META` is not yet signer-bound and its
+`MANIFEST` is not a complete segment directory. Exact identity pinning remains
+mandatory, and production authoring needs an accepted signed-policy format.
 
 ---
 
@@ -581,6 +628,7 @@ See [ADR-144](docs/adr/ADR-144-gpu-compute-support.md) for the complete architec
 | ADR-156 | External receipt anchoring into the witness chain |
 | ADR-157 | Capability-governed `ruv://` context namespace |
 | ADR-158 | Durable hosted `ruv://` context service |
+| ADR-159 | HostedIOS governed edge runtime and evidence boundary |
 
 </details>
 
@@ -589,7 +637,13 @@ See [ADR-144](docs/adr/ADR-144-gpu-compute-support.md) for the complete architec
 
 ### Prerequisites
 
-- Rust 1.77+ with `aarch64-unknown-none` target
+- Current stable Rust for the complete workspace (`rvm-context-service`
+  declares Rust 1.85)
+- Rust 1.77.2 for the targeted core/HostedIOS MSRV lane: `rvm-context`,
+  `rvm-wasm-hosted`, `rvm-host-ios`, `rvm-metal-ios`, `rvm-coreml`,
+  `rvm-sensors-ios`, and `rvm-ios-runtime` only
+- `aarch64-unknown-none` for the bare-metal checks; Apple arm64 device and
+  simulator targets for HostedIOS Rust cross-builds
 - QEMU 8.0+ (for AArch64 virt machine emulation)
 
 ```bash
@@ -599,7 +653,8 @@ brew install qemu  # macOS
 
 ### Project Conventions
 
-- `#![no_std]` everywhere — the kernel runs on bare metal
+- `#![no_std]` on kernel/bare-metal paths; hosted services and HostedIOS
+  adapters use `std` where their bounded host runtime requires it
 - `#![forbid(unsafe_code)]` where possible; `unsafe` blocks audited and commented
 - `#![deny(missing_docs)]` — every public API documented
 - Move semantics for memory ownership (`OwnedRegion<P>` is non-copyable)

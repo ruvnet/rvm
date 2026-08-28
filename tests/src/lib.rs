@@ -3,6 +3,9 @@
 //! Cross-crate integration tests for the RVM microhypervisor.
 
 #[cfg(test)]
+mod hosted_ios_tests;
+
+#[cfg(test)]
 mod tests {
     use rvm_types::{
         ActionKind, CapRights, CapToken, CapType, CoherenceScore, GuestPhysAddr, PartitionId,

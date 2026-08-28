@@ -16,10 +16,26 @@ pub enum DetailCode {
     RootManifestFound,
     /// The container has no `MANIFEST` segment.
     RootManifestMissing,
+    /// A trailing Level-0 page passed its structural and CRC32C checks.
+    RootPageIntegrityValid,
+    /// The Level-0 page points to the selected root `MANIFEST` bytes.
+    RootPageBindingMatches,
+    /// The Level-0 page does not point to the selected root `MANIFEST` bytes.
+    RootPageBindingMismatch,
+    /// The optional Level-0 page is unsigned.
+    RootPageUnsigned,
+    /// The Level-0 page and root `MANIFEST` have the same trusted signer.
+    RootSignerBindingMatches,
+    /// The Level-0 page and root `MANIFEST` do not have the same trusted signer.
+    RootSignerBindingMismatch,
+    /// No trusted signer binding could be established under current options.
+    RootSignerBindingUnavailable,
     /// The payload matches the header's content hash.
     ContentHashMatches,
     /// The payload does not match the header's content hash.
     ContentHashMismatch,
+    /// The header selects a reserved or unknown content-hash algorithm.
+    UnsupportedContentHashAlgorithm,
     /// The executable segment carries a signature footer.
     ExecutableIsSigned,
     /// The executable segment is unsigned and unsigned executables are refused.
@@ -55,8 +71,26 @@ impl fmt::Display for DetailCode {
             Self::IdentityMismatch => "container hashes to something else",
             Self::RootManifestFound => "root manifest segment found",
             Self::RootManifestMissing => "container has no MANIFEST segment",
+            Self::RootPageIntegrityValid => "Level-0 root page CRC32C and structure are valid",
+            Self::RootPageBindingMatches => "Level-0 root page binds the selected MANIFEST",
+            Self::RootPageBindingMismatch => {
+                "Level-0 root page does not bind the selected MANIFEST"
+            }
+            Self::RootPageUnsigned => "Level-0 root page is unsigned",
+            Self::RootSignerBindingMatches => {
+                "Level-0 page and MANIFEST have the same trusted signer"
+            }
+            Self::RootSignerBindingMismatch => {
+                "Level-0 page and MANIFEST trusted signers do not match"
+            }
+            Self::RootSignerBindingUnavailable => {
+                "Level-0 page and MANIFEST signer binding is unavailable"
+            }
             Self::ContentHashMatches => "payload matches the header content hash",
             Self::ContentHashMismatch => "payload does not match the header content hash",
+            Self::UnsupportedContentHashAlgorithm => {
+                "content-hash algorithm is reserved or unknown"
+            }
             Self::ExecutableIsSigned => "executable segment carries a signature footer",
             Self::ExecutableIsUnsigned => "executable segment is unsigned and refused",
             Self::UnsignedExecutablePermitted => "unsigned executable permitted for development",

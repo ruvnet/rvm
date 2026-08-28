@@ -11,10 +11,16 @@ members = [
     "crates/rvm-coherence",
     "crates/rvm-boot",
     "crates/rvm-wasm",
+    "crates/rvm-wasm-hosted",
     "crates/rvm-rvf",
     "crates/rvm-anchor",
     "crates/rvm-security",
     "crates/rvm-host",
+    "crates/rvm-host-ios",
+    "crates/rvm-metal-ios",
+    "crates/rvm-coreml",
+    "crates/rvm-sensors-ios",
+    "crates/rvm-ios-runtime",
     "crates/rvm-launch",
     "crates/rvm-context",
     "crates/rvm-context-wasm",
@@ -53,8 +59,14 @@ rvm-memory = { path = "crates/rvm-memory", version = "0.1.1" }
 rvm-coherence = { path = "crates/rvm-coherence", version = "0.1.1" }
 rvm-boot = { path = "crates/rvm-boot", version = "0.1.1" }
 rvm-wasm = { path = "crates/rvm-wasm", version = "0.1.1" }
+rvm-wasm-hosted = { path = "crates/rvm-wasm-hosted", version = "0.1.1" }
 rvm-rvf = { path = "crates/rvm-rvf", version = "0.1.1" }
 rvm-host = { path = "crates/rvm-host", version = "0.1.1" }
+rvm-host-ios = { path = "crates/rvm-host-ios", version = "0.1.1" }
+rvm-metal-ios = { path = "crates/rvm-metal-ios", version = "0.1.1" }
+rvm-coreml = { path = "crates/rvm-coreml", version = "0.1.1" }
+rvm-sensors-ios = { path = "crates/rvm-sensors-ios", version = "0.1.1" }
+rvm-ios-runtime = { path = "crates/rvm-ios-runtime", version = "0.1.1" }
 rvm-launch = { path = "crates/rvm-launch", version = "0.1.1" }
 rvm-context = { path = "crates/rvm-context", version = "0.1.1" }
 rvm-context-service = { path = "crates/rvm-context-service" }
@@ -71,6 +83,8 @@ subtle = { version = "2.6", default-features = false }
 xxhash-rust = { version = "0.8", default-features = false, features = ["xxh3"] }
 spin = { version = "0.10", default-features = false }
 bitflags = { version = "2", default-features = false }
+wasmi = { version = "=0.35.0", default-features = true }
+zeroize = { version = "1.8", default-features = false }
 
 # Testing
 criterion = { version = "0.5", features = ["html_reports"] }

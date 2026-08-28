@@ -27,6 +27,7 @@ ed25519-dalek = { version = "=2.1.1", default-features = false }
 
 [features]
 default = []
+testkit = []
 std = [
     "rvm-types/std",
     "rvm-cap/std",

@@ -183,7 +183,7 @@ mod tests {
         // a module from an artifact that did not verify.
         let data = testkit::container_with_wasm("memory");
         let report = rvm_rvf::verify(&data, &rvm_rvf::VerifyOptions::default()).unwrap();
-        assert!(!report.ok);
+        assert!(!report.is_ok());
         assert_eq!(
             VerifiedPackage::from_report(&report),
             Err(HostError::Unverified)

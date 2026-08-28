@@ -7,11 +7,17 @@
 //!
 //! | `checksum_algo` | Algorithm |
 //! |---|---|
-//! | 0 | CRC32C, deprecated — transparently upgraded to XXH3-128 |
+//! | 0 | Runtime-v1 legacy IEEE CRC32 rotation |
 //! | 1 | XXH3-128 (the writer's default) |
 //! | 2 | SHAKE-256, first 128 bits |
-//! | 3 | HMAC-SHAKE-256, reserved — falls back to XXH3-128 |
-//! | other | XXH3-128 |
+//! | 3 | HMAC-SHAKE-256, reserved — refused |
+//! | other | unknown — refused |
+//!
+//! RuVector v1 has two shipped writer paths. `rvf-runtime` labels its legacy
+//! CRC-rotation hash as algorithm zero; `rvf-wire` defaults to algorithm one.
+//! Treating zero or an unknown value as XXH3 accepts neither contract safely,
+//! so verification implements the deployed runtime bytes and fails closed on
+//! every unimplemented discriminator.
 //!
 //! Hashing is the *only* thing this crate does with an executable segment's
 //! payload bytes (ADR-284 §1.7).
@@ -37,17 +43,50 @@ pub fn shake256_128(data: &[u8]) -> [u8; 16] {
     out
 }
 
+/// Legacy RVF-runtime hash for `checksum_algo = 0`.
+///
+/// It is IEEE CRC32 (polynomial `0xEDB88320`, not CRC32C), repeated in four
+/// little-endian lanes after rotations of 0, 8, 16, and 24 bits. This weak
+/// checksum is retained strictly for byte compatibility with deployed v1
+/// runtime containers; executable authority still requires a signature.
+#[must_use]
+pub fn legacy_crc32_rotation_128(data: &[u8]) -> [u8; 16] {
+    let mut crc = 0xffff_ffffu32;
+    for &byte in data {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            let mask = 0u32.wrapping_sub(crc & 1);
+            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+        }
+    }
+    crc = !crc;
+
+    let mut hash = [0u8; 16];
+    for lane in 0..4 {
+        let rotated = crc.rotate_left(lane as u32 * 8);
+        hash[lane * 4..(lane + 1) * 4].copy_from_slice(&rotated.to_le_bytes());
+    }
+    hash
+}
+
+/// Whether `algo` is implemented by this verifier.
+#[must_use]
+pub const fn is_supported_content_hash(algo: u8) -> bool {
+    matches!(algo, 0..=2)
+}
+
 /// The content hash of `data` under algorithm `algo`.
 ///
-/// Unknown and reserved algorithm values fall back to XXH3-128, matching the
-/// writer. That is safe here because a mismatched fallback produces a hash
-/// that does not verify, which is a refusal rather than an acceptance.
+/// Reserved and unknown values return a zero sentinel. Callers deciding
+/// whether bytes are trustworthy must use [`verify_content_hash`], which
+/// explicitly refuses those values before comparing any digest.
 #[must_use]
 pub fn content_hash(algo: u8, data: &[u8]) -> [u8; 16] {
-    if algo == 2 {
-        shake256_128(data)
-    } else {
-        xxh3_128(data)
+    match algo {
+        0 => legacy_crc32_rotation_128(data),
+        1 => xxh3_128(data),
+        2 => shake256_128(data),
+        _ => [0u8; 16],
     }
 }
 
@@ -57,6 +96,9 @@ pub fn content_hash(algo: u8, data: &[u8]) -> [u8; 16] {
 /// through timing.
 #[must_use]
 pub fn verify_content_hash(header: &SegmentHeader, payload: &[u8]) -> bool {
+    if !is_supported_content_hash(header.checksum_algo) {
+        return false;
+    }
     let expected = content_hash(header.checksum_algo, payload);
     expected.ct_eq(&header.content_hash).into()
 }
@@ -93,10 +135,26 @@ mod tests {
     #[test]
     fn algo_dispatch_matches_the_published_table() {
         let data = b"algo dispatch";
-        for algo in [0u8, 1, 3, 9, 255] {
-            assert_eq!(content_hash(algo, data), xxh3_128(data), "algo {algo}");
-        }
+        assert_eq!(content_hash(0, data), legacy_crc32_rotation_128(data));
+        assert_eq!(content_hash(1, data), xxh3_128(data));
         assert_eq!(content_hash(2, data), shake256_128(data));
+        for algo in [3u8, 9, 255] {
+            assert_eq!(content_hash(algo, data), [0u8; 16], "algo {algo}");
+            assert!(!is_supported_content_hash(algo));
+        }
+    }
+
+    #[test]
+    fn legacy_hash_matches_the_deployed_runtime_vector() {
+        let hash = legacy_crc32_rotation_128(b"123456789");
+        assert_eq!(&hash[..4], &0xcbf4_3926u32.to_le_bytes());
+        assert_eq!(
+            hash,
+            [
+                0x26, 0x39, 0xf4, 0xcb, 0xcb, 0x26, 0x39, 0xf4, 0xf4, 0xcb, 0x26, 0x39, 0x39, 0xf4,
+                0xcb, 0x26
+            ]
+        );
     }
 
     #[test]
@@ -112,6 +170,17 @@ mod tests {
         let data = testkit::unsigned_segment(crate::format::SEG_TYPE_META, b"hello", 1);
         let header = SegmentHeader::parse(&data).unwrap();
         assert!(!verify_content_hash(&header, b"hellp"));
+    }
+
+    #[test]
+    fn unknown_and_reserved_algorithms_are_refused_even_with_a_zero_hash() {
+        let mut data = testkit::unsigned_segment(crate::format::SEG_TYPE_META, b"hello", 1);
+        for algo in [3u8, 4, 255] {
+            data[0x20] = algo;
+            data[0x28..0x38].fill(0);
+            let header = SegmentHeader::parse(&data).unwrap();
+            assert!(!verify_content_hash(&header, b"hello"), "algo {algo}");
+        }
     }
 
     #[test]

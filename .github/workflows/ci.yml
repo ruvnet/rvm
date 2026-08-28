@@ -14,7 +14,7 @@ jobs:
           targets: aarch64-unknown-none
           components: clippy, rustfmt
 
-      - run: cargo fmt -p rvm-context -p rvm-context-service -p rvm-context-wasm -p rvm-launch -p rvm-witness -p rvm-kernel -- --check
+      - run: cargo fmt -p rvm-context -p rvm-context-service -p rvm-context-wasm -p rvm-launch -p rvm-witness -p rvm-kernel -p rvm-hal -p rvm-rvf -p rvm-host -p rvm-wasm-hosted -p rvm-host-ios -p rvm-metal-ios -p rvm-coreml -p rvm-sensors-ios -p rvm-ios-runtime -- --check
       - run: cargo check --workspace --locked
       - run: cargo test --workspace --locked
       - run: cargo clippy --workspace --locked -- -D warnings
@@ -35,6 +35,24 @@ jobs:
           targets: aarch64-unknown-none
       - run: cargo check -p rvm-context --all-features --locked
       - run: cargo check --target aarch64-unknown-none -p rvm-context --no-default-features --locked
+      - run: cargo check -p rvm-wasm-hosted -p rvm-host-ios -p rvm-metal-ios -p rvm-coreml -p rvm-sensors-ios -p rvm-ios-runtime --locked
+      - run: cargo test -p rvm-wasm-hosted -p rvm-host-ios -p rvm-ios-runtime --locked
+
+  hosted-ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: git submodule update --init --depth 1 ruvector
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+          components: clippy,rustfmt
+
+      - run: cargo test -p rvm-rvf -p rvm-host -p rvm-wasm-hosted -p rvm-host-ios -p rvm-metal-ios -p rvm-coreml -p rvm-sensors-ios -p rvm-ios-runtime --locked
+      - run: cargo clippy -p rvm-wasm-hosted -p rvm-host-ios -p rvm-metal-ios -p rvm-coreml -p rvm-sensors-ios -p rvm-ios-runtime --all-targets --locked -- -D warnings
+      - run: cargo check --target aarch64-apple-ios -p rvm-wasm-hosted -p rvm-host-ios -p rvm-metal-ios -p rvm-coreml -p rvm-sensors-ios -p rvm-ios-runtime --locked
+      - run: cargo check --target aarch64-apple-ios-sim -p rvm-wasm-hosted -p rvm-host-ios -p rvm-metal-ios -p rvm-coreml -p rvm-sensors-ios -p rvm-ios-runtime --locked
 
   # The binding's tests are wasm_bindgen_test, which compile to nothing on the
   # host, so `cargo test --workspace` above runs zero of them. They only run

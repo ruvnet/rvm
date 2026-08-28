@@ -33,6 +33,7 @@ pub struct TestKeypair {
 
 impl TestKeypair {
     /// Derive a keypair from `seed`. The same seed always yields the same key.
+    #[must_use]
     pub fn deterministic(seed: u8) -> Self {
         let secret = crate::hash::sha256(&[seed; 32]);
         let signing = SigningKey::from_bytes(&secret);
@@ -70,6 +71,7 @@ fn pad_to_alignment(buf: &mut Vec<u8>) {
 }
 
 /// Build an unsigned segment.
+#[must_use]
 pub fn unsigned_segment(seg_type: u8, payload: &[u8], segment_id: u64) -> Vec<u8> {
     let unpadded = SEGMENT_HEADER_SIZE + payload.len();
     let pad = unpadded.div_ceil(SEGMENT_ALIGNMENT) * SEGMENT_ALIGNMENT - unpadded;
@@ -82,6 +84,12 @@ pub fn unsigned_segment(seg_type: u8, payload: &[u8], segment_id: u64) -> Vec<u8
 }
 
 /// Build a segment carrying a real Ed25519 signature footer over `payload`.
+///
+/// # Panics
+///
+/// Panics only if the internally constructed fixed-size RVF header fails its
+/// own parser, which indicates a testkit implementation defect.
+#[must_use]
 pub fn signed_segment(
     seg_type: u8,
     payload: &[u8],
@@ -110,6 +118,7 @@ pub fn signed_segment(
 
 /// Build a segment that sets `SIGNED` but writes no footer, so the trailing
 /// zero padding is all a reader finds where a signature should be.
+#[must_use]
 pub fn signed_flag_without_footer(seg_type: u8, payload: &[u8], segment_id: u64) -> Vec<u8> {
     let unpadded = SEGMENT_HEADER_SIZE + payload.len();
     let pad = unpadded.div_ceil(SEGMENT_ALIGNMENT) * SEGMENT_ALIGNMENT - unpadded;
@@ -133,6 +142,7 @@ pub fn signed_flag_without_footer(seg_type: u8, payload: &[u8], segment_id: u64)
 
 /// A minimal but complete container: a `META` segment carrying the given
 /// capability declaration, then a `MANIFEST` segment as the root.
+#[must_use]
 pub fn minimal_container(capabilities: &str) -> Vec<u8> {
     let mut meta = Vec::new();
     meta.extend_from_slice(crate::capability::CAPABILITY_DECLARATION_KEY.as_bytes());

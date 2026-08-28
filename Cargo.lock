@@ -866,6 +866,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "downcast-rs"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
+
+[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1473,13 +1479,19 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.14.0"
+version = "2.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
+checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.17.1",
+ "hashbrown 0.15.5",
 ]
+
+[[package]]
+name = "indexmap-nostd"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e04e2fd2b8188ea827b32ef11de88377086d690286ab35747ef7f9bf3ccb590"
 
 [[package]]
 name = "inout"
@@ -1657,6 +1669,12 @@ name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+
+[[package]]
+name = "leb128"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c83bff1d572d6b9aeef67ddfc8448e4a3737909cb28e81f97c791b9018703e52"
 
 [[package]]
 name = "libc"
@@ -1856,6 +1874,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "multi-stash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "685a9ac4b61f4e728e1d2c6a7844609c16527aeb5e6c865915c08e619c16410f"
+
+[[package]]
 name = "munge"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1964,6 +1988,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "num-derive"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -2731,7 +2766,7 @@ name = "rvm-cap"
 version = "0.1.1"
 dependencies = [
  "rvm-types",
- "spin",
+ "spin 0.10.1",
 ]
 
 [[package]]
@@ -2801,6 +2836,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rvm-coreml"
+version = "0.1.1"
+dependencies = [
+ "rvm-host-ios",
+]
+
+[[package]]
 name = "rvm-gpu"
 version = "0.1.1"
 dependencies = [
@@ -2825,6 +2867,34 @@ dependencies = [
  "rvm-types",
  "rvm-wasm",
  "rvm-witness",
+]
+
+[[package]]
+name = "rvm-host-ios"
+version = "0.1.1"
+dependencies = [
+ "ed25519-dalek",
+ "hmac",
+ "rvm-host",
+ "rvm-rvf",
+ "rvm-wasm-hosted",
+ "sha2",
+ "wat",
+ "zeroize",
+]
+
+[[package]]
+name = "rvm-ios-runtime"
+version = "0.1.1"
+dependencies = [
+ "rvm-coreml",
+ "rvm-host",
+ "rvm-host-ios",
+ "rvm-metal-ios",
+ "rvm-rvf",
+ "rvm-sensors-ios",
+ "rvm-wasm-hosted",
+ "wat",
 ]
 
 [[package]]
@@ -2866,13 +2936,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rvm-metal-ios"
+version = "0.1.1"
+dependencies = [
+ "rvm-host-ios",
+]
+
+[[package]]
 name = "rvm-partition"
 version = "0.1.1"
 dependencies = [
  "rvm-cap",
  "rvm-types",
  "rvm-witness",
- "spin",
+ "spin 0.10.1",
 ]
 
 [[package]]
@@ -2885,7 +2962,7 @@ dependencies = [
  "rvm-types",
  "rvm-witness",
  "sha2",
- "spin",
+ "spin 0.10.1",
  "subtle",
 ]
 
@@ -2910,7 +2987,7 @@ dependencies = [
  "rvm-partition",
  "rvm-types",
  "rvm-witness",
- "spin",
+ "spin 0.10.1",
 ]
 
 [[package]]
@@ -2924,20 +3001,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "rvm-sensors-ios"
+version = "0.1.1"
+dependencies = [
+ "rvm-host-ios",
+]
+
+[[package]]
 name = "rvm-tests"
 version = "0.1.1"
 dependencies = [
  "rvm-boot",
  "rvm-cap",
  "rvm-coherence",
+ "rvm-coreml",
  "rvm-gpu",
  "rvm-hal",
+ "rvm-host",
+ "rvm-host-ios",
  "rvm-kernel",
  "rvm-memory",
+ "rvm-metal-ios",
  "rvm-partition",
  "rvm-proof",
+ "rvm-rvf",
  "rvm-sched",
  "rvm-security",
+ "rvm-sensors-ios",
  "rvm-types",
  "rvm-wasm",
  "rvm-witness",
@@ -2961,13 +3051,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rvm-wasm-hosted"
+version = "0.1.1"
+dependencies = [
+ "wasmi",
+ "wat",
+]
+
+[[package]]
 name = "rvm-witness"
 version = "0.1.1"
 dependencies = [
  "hmac",
  "rvm-types",
  "sha2",
- "spin",
+ "spin 0.10.1",
 ]
 
 [[package]]
@@ -3124,6 +3222,12 @@ dependencies = [
 
 [[package]]
 name = "spin"
+version = "0.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
+
+[[package]]
+name = "spin"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "023a211cb3138dbc438680b32560ad89f699977624c9f8dbb95a47d5b4c07dd3"
@@ -3152,6 +3256,17 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "string-interner"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c6a0d765f5807e98a091107bae0a56ea3799f66a5de47b2c84c94a39c09974e"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.5",
+ "serde",
+]
 
 [[package]]
 name = "string_cache"
@@ -3725,6 +3840,97 @@ name = "wasm-bindgen-test-shared"
 version = "0.2.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c29582b14d5bf030b02fa232b9b57faf2afc322d2c61964dd80bad02bf76207"
+
+[[package]]
+name = "wasm-encoder"
+version = "0.219.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8aa79bcd666a043b58f5fa62b221b0b914dd901e6f620e8ab7371057a797f3e1"
+dependencies = [
+ "leb128",
+ "wasmparser",
+]
+
+[[package]]
+name = "wasmi"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbaac6e702fa7b52258e5ac90d6e20a40afb37a1fbe7c645d0903ee42c5f85f4"
+dependencies = [
+ "arrayvec",
+ "multi-stash",
+ "num-derive",
+ "num-traits",
+ "smallvec",
+ "spin 0.9.9",
+ "wasmi_collections",
+ "wasmi_core",
+ "wasmparser-nostd",
+]
+
+[[package]]
+name = "wasmi_collections"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ff59e30e550a509cc689ec638e5042be4d78ec9f6dd8a71fd02ee28776a74fd"
+dependencies = [
+ "ahash",
+ "hashbrown 0.14.5",
+ "string-interner",
+]
+
+[[package]]
+name = "wasmi_core"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13e10c674add0f92f47bf8ad57c55ee3ac1762a0d9baf07535e27e22b758a916"
+dependencies = [
+ "downcast-rs",
+ "libm",
+ "num-traits",
+ "paste",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.219.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5220ee4c6ffcc0cb9d7c47398052203bc902c8ef3985b0c8134118440c0b2921"
+dependencies = [
+ "bitflags 2.11.0",
+ "indexmap",
+]
+
+[[package]]
+name = "wasmparser-nostd"
+version = "0.100.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5a015fe95f3504a94bb1462c717aae75253e39b9dd6c3fb1062c934535c64aa"
+dependencies = [
+ "indexmap-nostd",
+]
+
+[[package]]
+name = "wast"
+version = "219.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "903a5aa0180cb4d0d64a27b8c362cbf1c3ab3b629fe5f283d16b6cdb40eba04e"
+dependencies = [
+ "bumpalo",
+ "leb128",
+ "memchr",
+ "unicode-width",
+ "wasm-encoder",
+]
+
+[[package]]
+name = "wat"
+version = "1.219.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ebe268d2e8edb4acbc5de8d19df0ab41f5fa12d3b20d50fa9d19d0c985e8b42"
+dependencies = [
+ "wast",
+]
 
 [[package]]
 name = "web-sys"

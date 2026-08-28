@@ -105,7 +105,7 @@ pub fn package(classes: &str) -> crate::VerifiedPackage {
     let data = container_with_wasm(classes);
     let report = rvm_rvf::verify(&data, &lenient_options()).expect("fixture is a valid container");
     assert!(
-        report.ok,
+        report.is_ok(),
         "fixture failed verification: {:?}",
         report.failures()
     );
@@ -125,8 +125,8 @@ mod tests {
         assert!(segments[1].is_executable());
 
         let report = verify(&data, &lenient_options()).unwrap();
-        assert!(report.ok, "{:?}", report.failures());
-        assert!(report.capabilities.is_granted(CapabilityClass::Clock));
+        assert!(report.is_ok(), "{:?}", report.failures());
+        assert!(report.capabilities().is_granted(CapabilityClass::Clock));
     }
 
     #[test]
