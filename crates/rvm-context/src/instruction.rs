@@ -120,7 +120,11 @@ impl InstructionProvenance {
     /// privilege-escalation bug this type is designed to expose.
     #[must_use]
     pub fn trusted_system_policy(content: &[u8]) -> Self {
-        Self::root(ContextSource::SystemPolicy, InstructionLevel::System, content)
+        Self::root(
+            ContextSource::SystemPolicy,
+            InstructionLevel::System,
+            content,
+        )
     }
 
     /// Classify trusted application or developer policy.
@@ -171,6 +175,14 @@ impl InstructionProvenance {
     /// requires reclassification at an external trusted boundary rather than a
     /// model-visible instruction. `ContextTransform::Original` is reserved for
     /// root classification and is rejected here.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InstructionPrivilegeError::InvalidTransform`] when `Original`
+    /// is requested, [`InstructionPrivilegeError::Escalation`] when the child
+    /// requests more authority than the parent ceiling, or
+    /// [`InstructionPrivilegeError::DepthOverflow`] when the lineage depth can
+    /// no longer be represented.
     pub fn transform(
         &self,
         transform: ContextTransform,
@@ -211,6 +223,11 @@ impl InstructionProvenance {
     }
 
     /// Verify that presenting this fragment at `level` does not exceed its ceiling.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InstructionPrivilegeError::Escalation`] when `level` exceeds
+    /// the fragment's current authority ceiling.
     pub fn validate_presentation(
         &self,
         level: InstructionLevel,
@@ -399,7 +416,9 @@ mod tests {
             b"deploy the current branch",
         );
         assert_eq!(scheduled.origin_level(), InstructionLevel::Data);
-        assert!(scheduled.validate_presentation(InstructionLevel::User).is_err());
+        assert!(scheduled
+            .validate_presentation(InstructionLevel::User)
+            .is_err());
     }
 
     #[test]
