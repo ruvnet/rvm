@@ -90,6 +90,8 @@ pub enum InstructionPrivilegeError {
         /// Authority requested for the derived fragment.
         requested: InstructionLevel,
     },
+    /// `Original` is reserved for root classification and cannot be synthesized.
+    InvalidTransform,
     /// The transformation depth exceeded the representable provenance chain depth.
     DepthOverflow,
 }
@@ -167,13 +169,17 @@ impl InstructionProvenance {
     /// `requested` becomes the child's new ceiling. That means an explicit
     /// downgrade is irreversible through ordinary transformation. Re-upgrading
     /// requires reclassification at an external trusted boundary rather than a
-    /// model-visible instruction.
+    /// model-visible instruction. `ContextTransform::Original` is reserved for
+    /// root classification and is rejected here.
     pub fn transform(
         &self,
         transform: ContextTransform,
         requested: InstructionLevel,
         content: &[u8],
     ) -> Result<Self, InstructionPrivilegeError> {
+        if transform == ContextTransform::Original {
+            return Err(InstructionPrivilegeError::InvalidTransform);
+        }
         if requested > self.ceiling {
             return Err(InstructionPrivilegeError::Escalation {
                 ceiling: self.ceiling,
@@ -394,6 +400,19 @@ mod tests {
         );
         assert_eq!(scheduled.origin_level(), InstructionLevel::Data);
         assert!(scheduled.validate_presentation(InstructionLevel::User).is_err());
+    }
+
+    #[test]
+    fn original_transform_cannot_be_fabricated() {
+        let root = InstructionProvenance::authenticated_user(b"inspect");
+        assert_eq!(
+            root.transform(
+                ContextTransform::Original,
+                InstructionLevel::User,
+                b"inspect"
+            ),
+            Err(InstructionPrivilegeError::InvalidTransform)
+        );
     }
 
     #[test]
