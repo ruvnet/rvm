@@ -10,7 +10,6 @@
 //! preserve or add sensitivity through [`FlowLabel::join`], but ordinary model,
 //! tool, memory, summary, or delegation paths cannot remove a class.
 
-use alloc::vec::Vec;
 use sha2::{Digest, Sha256};
 
 /// Maximum number of parents accepted by one flow join.
@@ -144,11 +143,12 @@ impl FlowLabel {
         source_tag: &[u8],
     ) -> FlowResult<Self> {
         validate_source(classes, &task_scope, source_tag)?;
+        let tag_len = u16::try_from(source_tag.len()).map_err(|_| FlowError::TagTooLarge)?;
         let mut hasher = Sha256::new();
         hasher.update(FLOW_SOURCE_DOMAIN);
         hasher.update(classes.bits().to_be_bytes());
         hasher.update(task_scope);
-        hasher.update((source_tag.len() as u64).to_be_bytes());
+        hasher.update(tag_len.to_be_bytes());
         hasher.update(source_tag);
         Ok(Self {
             classes,
@@ -165,11 +165,12 @@ impl FlowLabel {
     /// [`MAX_FLOW_TAG_BYTES`].
     pub fn derive(&self, transform_tag: &[u8]) -> FlowResult<Self> {
         validate_tag(transform_tag)?;
+        let tag_len = u16::try_from(transform_tag.len()).map_err(|_| FlowError::TagTooLarge)?;
         let mut hasher = Sha256::new();
         hasher.update(FLOW_DERIVE_DOMAIN);
         hasher.update(self.lineage_hash);
         hasher.update(self.classes.bits().to_be_bytes());
-        hasher.update((transform_tag.len() as u64).to_be_bytes());
+        hasher.update(tag_len.to_be_bytes());
         hasher.update(transform_tag);
         Ok(Self {
             classes: self.classes,
@@ -197,6 +198,8 @@ impl FlowLabel {
         }
         validate_tag(transform_tag)?;
 
+        let parent_count = u8::try_from(parents.len()).map_err(|_| FlowError::TooManyParents)?;
+        let tag_len = u16::try_from(transform_tag.len()).map_err(|_| FlowError::TagTooLarge)?;
         let task_scope = parents[0].task_scope;
         let mut classes = FlowClasses::NONE;
         for parent in parents {
@@ -208,12 +211,12 @@ impl FlowLabel {
 
         let mut hasher = Sha256::new();
         hasher.update(FLOW_JOIN_DOMAIN);
-        hasher.update((parents.len() as u64).to_be_bytes());
+        hasher.update([parent_count]);
         for parent in parents {
             hasher.update(parent.lineage_hash);
             hasher.update(parent.classes.bits().to_be_bytes());
         }
-        hasher.update((transform_tag.len() as u64).to_be_bytes());
+        hasher.update(tag_len.to_be_bytes());
         hasher.update(transform_tag);
 
         Ok(Self {
@@ -303,7 +306,7 @@ impl EgressBudget {
     /// allowed flows. Callers must still hold whatever RVM execution capability
     /// is required to invoke the sink.
     #[must_use]
-    pub const fn check(&self, label: &FlowLabel) -> EgressReceipt {
+    pub fn check(&self, label: &FlowLabel) -> EgressReceipt {
         let decision = if label.task_scope != self.task_scope {
             EgressDecision::TaskScopeMismatch
         } else if !label.classes.is_subset_of(self.allowed_classes) {
@@ -415,6 +418,7 @@ const fn is_zero(value: &[u8; 32]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     const TASK_A: [u8; 32] = [1; 32];
     const TASK_B: [u8; 32] = [2; 32];
@@ -514,7 +518,7 @@ mod tests {
     #[test]
     fn parent_limit_blocks_resource_exhaustion() {
         let parent = source(FlowClasses::PUBLIC);
-        let parents: Vec<_> = core::iter::repeat_n(parent, MAX_FLOW_PARENTS + 1).collect();
+        let parents = vec![parent; MAX_FLOW_PARENTS + 1];
         assert_eq!(
             FlowLabel::join(&parents, b"too-many"),
             Err(FlowError::TooManyParents)
