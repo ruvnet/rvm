@@ -120,6 +120,17 @@ pub type HookUpdateResult<T> = core::result::Result<T, HookUpdateError>;
 /// identity, continuity, event, rights, epoch, and freshness envelope.
 /// Callers must separately prove that the grant itself was issued by an
 /// authenticated RVM authority.
+///
+/// # Errors
+///
+/// Returns [`HookUpdateError::PluginMismatch`] when plugin identity differs,
+/// [`HookUpdateError::PreviousManifestMismatch`] when approved-manifest
+/// continuity is not exact, [`HookUpdateError::EventNotAllowed`] when the
+/// requested lifecycle event is outside the grant, and
+/// [`HookUpdateError::RightsEscalation`] when requested rights exceed the
+/// declared ceiling. Returns [`HookUpdateError::EpochMismatch`] for stale or
+/// foreign capability epochs and [`HookUpdateError::GrantExpired`] after the
+/// grant's monotonic expiry tick.
 pub fn validate_hook_update(
     grant: &HookUpdateGrant,
     request: &HookUpdateRequest,
