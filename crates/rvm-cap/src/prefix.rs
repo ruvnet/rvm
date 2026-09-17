@@ -197,7 +197,7 @@ fn valid_assessment(assessment: &PrefixAssessment<'_>) -> bool {
     !zero_digest(&assessment.observation_digest)
         && !zero_digest(&assessment.policy_digest)
         && !zero_digest(&assessment.evaluator_digest)
-        && assessment.actions.len() <= usize::from(u16::MAX)
+        && u16::try_from(assessment.actions.len()).is_ok()
         && assessment.actions.iter().all(|action| {
             !zero_digest(&action.action_digest)
                 && action.estimated_failure_risk_ppm <= RISK_PPM_MAX
