@@ -39,6 +39,7 @@ mod derivation;
 mod error;
 mod grant;
 mod manager;
+mod prefix;
 mod revoke;
 mod table;
 mod verify;
@@ -47,6 +48,10 @@ pub use derivation::{DerivationNode, DerivationTree};
 pub use error::{CapError, CapResult, ProofError};
 pub use grant::GrantPolicy;
 pub use manager::{CapManagerConfig, CapabilityManager, ManagerStats};
+pub use prefix::{
+    select_interruptible_prefix, AssessedAction, InterruptiblePrefixPolicy, PrefixAssessment,
+    PrefixDecision, PrefixDigest, PrefixStopReason, RISK_PPM_MAX,
+};
 pub use revoke::{revoke_single, RevokeResult};
 pub use table::{CapSlot, CapabilityTable};
 pub use verify::ProofVerifier;
