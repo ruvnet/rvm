@@ -1,0 +1,30 @@
+name: Interruptible Prefix
+
+on:
+  pull_request:
+    paths:
+      - "crates/rvm-cap/**"
+      - "docs/adr/ADR-160-interruptible-action-prefixes.md"
+      - ".github/workflows/interruptible-prefix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize pinned RuVector submodule
+        run: git submodule update --init --depth 1 ruvector
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Unit tests
+        run: cargo test -p rvm-cap --locked
+      - name: Clippy
+        run: cargo clippy -p rvm-cap --all-features --locked -- -D warnings
+      - name: Frozen structural benchmark
+        run: cargo run -p rvm-cap --example interruptible_prefix_bench --release --locked
