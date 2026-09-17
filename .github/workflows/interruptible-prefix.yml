@@ -17,6 +17,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize pinned RuVector submodule
+        run: git submodule update --init --depth 1 ruvector
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
