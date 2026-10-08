@@ -41,6 +41,7 @@ mod grant;
 mod manager;
 mod revoke;
 mod table;
+mod transition;
 mod verify;
 
 pub use derivation::{DerivationNode, DerivationTree};
@@ -49,6 +50,10 @@ pub use grant::GrantPolicy;
 pub use manager::{CapManagerConfig, CapabilityManager, ManagerStats};
 pub use revoke::{revoke_single, RevokeResult};
 pub use table::{CapSlot, CapabilityTable};
+pub use transition::{
+    verify_strict_continuity, ContinuityError, ContinuityField, ReceiptAuthority,
+    SecurityContext, SecurityDigest, StrictContinuityReceipt, TransitionObservation,
+};
 pub use verify::ProofVerifier;
 
 // Re-export commonly used types from rvm-types.
