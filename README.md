@@ -973,3 +973,13 @@ at your option.
 ---
 
 <sub>[EPIC](https://github.com/ruvnet/RuVector/issues/328) · [Research Gist](https://gist.github.com/ruvnet/8082d0b339f05e73cf48b491de5b8ee6) · [pi.ruv.io Brain](https://pi.ruv.io)</sub>
+
+## Strands Agents integration
+
+[Integration guide](docs/strands-integration.md): reusable Python tools for
+capability-governed RVF context search, read and verification, plus optional
+Strands Box launch support on macOS. `rvm_host::semantic` adds an opt-in
+default-deny action broker with live authority checks, temporal prerequisites,
+sliding-window quotas and receipts persisted before dispatch. Platform
+containment remains the embedding host's responsibility; see
+[ADR-159](docs/adr/ADR-159-semantic-policy-strands.md) for tested boundaries.

@@ -82,6 +82,7 @@ pub mod hosted;
 pub mod isolation;
 pub mod mechanism;
 pub mod package;
+pub mod semantic;
 pub mod wasm;
 pub mod witness;
 
