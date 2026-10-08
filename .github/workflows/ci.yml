@@ -60,6 +60,9 @@ jobs:
       - run: node crates/rvm-context-wasm/tests/smoke.mjs
 
   audit:
+    permissions:
+      contents: read
+      checks: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
