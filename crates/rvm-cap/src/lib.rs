@@ -14,6 +14,8 @@
 //! - **Derivation Tree**: Parent-child relationships with monotonic attenuation.
 //! - **Delegation Depth**: Max 8 levels to prevent unbounded chains.
 //! - **Epoch-based revocation**: Stale handles detected via epoch counter.
+//! - **Acquired Resource Quarantine**: Provider evidence is checked before a
+//!   resource can become eligible for a separately authorized capability.
 //!
 //! # Design Principles (ADR-135)
 //!
@@ -35,6 +37,7 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+mod acquisition;
 mod derivation;
 mod error;
 mod grant;
@@ -43,6 +46,11 @@ mod revoke;
 mod table;
 mod verify;
 
+pub use acquisition::{
+    AcquiredResourceKind, ActivationEnvelope, ActivationError, ActivationLedger,
+    ActivationReceipt, Digest32, ProviderEvidenceVerifier, QuarantinedResource,
+    ResolvedResourceManifest,
+};
 pub use derivation::{DerivationNode, DerivationTree};
 pub use error::{CapError, CapResult, ProofError};
 pub use grant::GrantPolicy;
