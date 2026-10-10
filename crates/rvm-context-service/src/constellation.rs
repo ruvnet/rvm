@@ -82,7 +82,9 @@ impl CompiledDiscoveryManifest {
 /// compiler verification failures.
 pub fn compile_discovery_manifest(bytes: &[u8]) -> ServiceResult<CompiledDiscoveryManifest> {
     if bytes.is_empty() || bytes.len() > MAX_DISCOVERY_MANIFEST_BYTES {
-        return Err(ServiceError::CorruptState("discovery manifest size invalid"));
+        return Err(ServiceError::CorruptState(
+            "discovery manifest size invalid",
+        ));
     }
     let projection: DiscoveryProjection = serde_json::from_slice(bytes)
         .map_err(|_| ServiceError::CorruptState("discovery manifest JSON invalid"))?;
@@ -105,11 +107,13 @@ pub fn compile_discovery_manifest(bytes: &[u8]) -> ServiceResult<CompiledDiscove
         .strip_prefix("https://github.com/ruvnet/")
         .filter(|name| {
             !name.is_empty()
-                && name.bytes().all(|byte| {
-                    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
-                })
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
         })
-        .ok_or(ServiceError::CorruptState("discovery repository URL invalid"))?;
+        .ok_or(ServiceError::CorruptState(
+            "discovery repository URL invalid",
+        ))?;
     let subject_id = repo.to_ascii_lowercase().replace(['.', '_'], "-");
     if uri.authority().as_str() != "ruvnet"
         || uri.tenant().as_str() != "constellation"
@@ -154,7 +158,10 @@ mod tests {
         let compiled = compile_discovery_manifest(&bytes).unwrap();
         let repeated = compile_discovery_manifest(&bytes).unwrap();
         assert_eq!(compiled, repeated);
-        assert_eq!(compiled.content_digest(), Revision::from_bytes(sha256(&bytes)));
+        assert_eq!(
+            compiled.content_digest(),
+            Revision::from_bytes(sha256(&bytes))
+        );
         assert_eq!(compiled.uri().subject().id().as_str(), "rvm");
         let artifact = compiled.artifact();
         let profile = VerifiedContextProfile::from_rvf(
@@ -165,12 +172,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            profile.payload(artifact.rvf(), ProgressiveView::Content).unwrap(),
+            profile
+                .payload(artifact.rvf(), ProgressiveView::Content)
+                .unwrap(),
             bytes
         );
         let compact = serde_json::to_vec(&projection()).unwrap();
         assert_ne!(
-            compile_discovery_manifest(&compact).unwrap().artifact().identity(),
+            compile_discovery_manifest(&compact)
+                .unwrap()
+                .artifact()
+                .identity(),
             artifact.identity()
         );
     }
