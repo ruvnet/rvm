@@ -454,9 +454,7 @@ pub unsafe fn clear_bss() {
         let end = core::ptr::addr_of_mut!(__bss_end);
         debug_assert!(
             end as usize >= start as usize,
-            "BSS end ({:p}) < start ({:p}): linker script misconfigured",
-            end,
-            start,
+            "BSS end ({end:p}) < start ({start:p}): linker script misconfigured",
         );
         let len = (end as usize).saturating_sub(start as usize);
         core::ptr::write_bytes(start, 0, len);
