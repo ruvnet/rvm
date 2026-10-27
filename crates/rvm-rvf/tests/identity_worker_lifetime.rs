@@ -36,6 +36,7 @@ fn pol(keys: &[[u8; 32]]) -> StreamPolicy<'_> {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "counts threads via /proc/self/task (Linux only)")]
 fn rv3_01_worker_thread_is_joined_at_poison_completion_suspend_and_infeasibility() {
     let body = big_body(5);
     let b = builder(16, Order::File);
@@ -99,6 +100,7 @@ fn rv3_01_worker_thread_is_joined_at_poison_completion_suspend_and_infeasibility
 
 /// Stage-ordered delivery is expected out of file order: no worker at all.
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "counts threads via /proc/self/task (Linux only)")]
 fn rv3_01_stage_order_does_not_spawn_a_worker() {
     let body = big_body(5);
     let mut b = builder(16, Order::Stage);
