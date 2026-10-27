@@ -430,6 +430,9 @@ impl<'p> StreamSession<'p> {
         self.ready.clear();
         self.package = None;
         self.pending_package = None;
+        // A report built before this refusal (the final chunk completed the stream
+        // before module validation or the replay check ran) must not stay `ok`.
+        self.admission.refuse_report();
         self.failure = Some(e);
     }
 

@@ -189,6 +189,15 @@ impl<'p> StreamAdmission<'p> {
         self.report.as_ref()
     }
 
+    /// Mark the report refused after a later gate (module validation, replay)
+    /// failed. The report stays readable to explain the failure, but it must
+    /// never read `ok`, because `VerifiedPackage::from_report` trusts that flag.
+    pub fn refuse_report(&mut self) {
+        if let Some(r) = self.report.as_mut() {
+            r.ok = false;
+        }
+    }
+
     /// Take the report.
     #[must_use]
     pub fn into_report(self) -> Option<VerificationReport> {
