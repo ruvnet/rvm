@@ -24,6 +24,7 @@ extern crate std;
 
 pub mod capability;
 pub mod error;
+pub mod flow;
 pub mod profile;
 pub mod receipt;
 pub mod resolver;
@@ -35,6 +36,10 @@ pub use capability::{
     ContextOperation, ContextRequest, ContextScope, ContextViewMask, MAX_SEARCH_RESULTS,
 };
 pub use error::{ContextError, ContextResult};
+pub use flow::{
+    EgressBudget, EgressDecision, EgressReceipt, FlowClasses, FlowError, FlowLabel, FlowResult,
+    MAX_FLOW_PARENTS, MAX_FLOW_TAG_BYTES,
+};
 pub use profile::{
     ContextProfile, ContextProfileError, DerivedView, ProfileTrust, ProfileView,
     VerifiedContextProfile, CONTEXT_PROFILE_MAGIC, CONTEXT_PROFILE_VERSION, MAX_CONTEXT_RVF_BYTES,
