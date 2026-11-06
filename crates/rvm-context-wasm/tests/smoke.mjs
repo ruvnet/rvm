@@ -1,47 +1,77 @@
 #!/usr/bin/env node
-// Node smoke test for the built @ruvnet/rvm-context-wasm package.
+// Node smoke test for the @ruvnet/rvm-context-wasm package.
 //
-// Packs and installs the package into a temporary directory, then imports it by
-// its published name so the exports map and files list are exercised the same
-// way a consumer would exercise them.
+// Installs the package into a temporary directory, then imports it by its
+// published name so the exports map and files list are exercised the same way
+// a consumer would exercise them.
 //
 // Usage: node crates/rvm-context-wasm/tests/smoke.mjs
-//        (run scripts/build-npm.mjs first)
+//          Packs the local build (run scripts/build-npm.mjs first).
+//        node crates/rvm-context-wasm/tests/smoke.mjs --registry[=<version>]
+//          Installs the published package from the npm registry instead
+//          (default: the crate's own version), to verify a release.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const PACKAGE_NAME = "@ruvnet/rvm-context-wasm";
 const crateDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const pkgDir = join(crateDir, "pkg");
 
-if (!existsSync(join(pkgDir, "package.json"))) {
+const registryArg = process.argv.slice(2).find((arg) => arg === "--registry" || arg.startsWith("--registry="));
+let registryVersion;
+if (registryArg) {
+  registryVersion = registryArg.includes("=") ? registryArg.slice("--registry=".length) : workspaceVersion();
+  if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(registryVersion)) {
+    console.error(`--registry needs an exact version, got "${registryVersion}"`);
+    process.exit(1);
+  }
+} else if (!existsSync(join(pkgDir, "package.json"))) {
   console.error("pkg/ not found — run scripts/build-npm.mjs first");
   process.exit(1);
+}
+
+// The crate inherits its version from the workspace manifest.
+function workspaceVersion() {
+  const manifest = readFileSync(join(crateDir, "..", "..", "Cargo.toml"), "utf8");
+  const section = manifest.split(/^\[workspace\.package\]$/m)[1] ?? "";
+  const match = section.match(/^version\s*=\s*"([^"]+)"/m);
+  if (!match) {
+    throw new Error("no [workspace.package] version in Cargo.toml");
+  }
+  return match[1];
 }
 
 const stage = mkdtempSync(join(tmpdir(), "rvm-context-smoke-"));
 process.on("exit", () => rmSync(stage, { recursive: true, force: true }));
 
-console.log("packing and installing the built package...");
-execFileSync("npm", ["pack", "--pack-destination", stage, "--silent"], {
-  cwd: pkgDir,
-  stdio: "inherit",
-});
-const tarball = readdirSync(stage).find((file) => file.endsWith(".tgz"));
-assert.ok(tarball, "npm pack produced a tarball");
-
 writeFileSync(
   join(stage, "package.json"),
   JSON.stringify({ name: "smoke-host", version: "1.0.0", private: true }) + "\n"
 );
+
+let installSpec;
+if (registryVersion) {
+  console.log(`installing ${PACKAGE_NAME}@${registryVersion} from the registry...`);
+  installSpec = `${PACKAGE_NAME}@${registryVersion}`;
+} else {
+  console.log("packing and installing the built package...");
+  execFileSync("npm", ["pack", "--pack-destination", stage, "--silent"], {
+    cwd: pkgDir,
+    stdio: "inherit",
+  });
+  const tarball = readdirSync(stage).find((file) => file.endsWith(".tgz"));
+  assert.ok(tarball, "npm pack produced a tarball");
+  installSpec = join(stage, tarball);
+}
 execFileSync(
   "npm",
-  ["install", join(stage, tarball), "--no-audit", "--no-fund", "--silent"],
+  ["install", installSpec, "--no-audit", "--no-fund", "--silent"],
   { cwd: stage, stdio: "inherit" }
 );
 
