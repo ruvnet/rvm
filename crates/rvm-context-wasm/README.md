@@ -266,6 +266,14 @@ node crates/rvm-context-wasm/tests/smoke.mjs
 
 Requires the `wasm32-unknown-unknown` target and `wasm-pack`.
 
+To check a published release instead of the local build, run the same smoke test against the
+registry. With no version it uses the workspace version:
+
+```sh
+node crates/rvm-context-wasm/tests/smoke.mjs --registry          # e.g. 0.1.1
+node crates/rvm-context-wasm/tests/smoke.mjs --registry=0.1.1
+```
+
 The Rust-side binding tests run on the real wasm target under Node:
 
 ```sh
