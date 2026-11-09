@@ -38,6 +38,7 @@ extern crate std;
 mod derivation;
 mod error;
 mod grant;
+mod hook;
 mod manager;
 mod revoke;
 mod table;
@@ -46,6 +47,10 @@ mod verify;
 pub use derivation::{DerivationNode, DerivationTree};
 pub use error::{CapError, CapResult, ProofError};
 pub use grant::GrantPolicy;
+pub use hook::{
+    validate_hook_update, HookBinding, HookEvent, HookUpdateError, HookUpdateGrant,
+    HookUpdateRequest, HookUpdateResult,
+};
 pub use manager::{CapManagerConfig, CapabilityManager, ManagerStats};
 pub use revoke::{revoke_single, RevokeResult};
 pub use table::{CapSlot, CapabilityTable};
