@@ -8,7 +8,9 @@
 //!
 //! The public surface separates inspection, reading, mutation, and execution.
 //! In particular, resolving or reading a skill never confers permission to
-//! execute it.
+//! execute it. Model-facing context fragments also carry monotonic instruction
+//! provenance so delegation, retrieval, summarization, scheduling, and resume
+//! paths cannot silently upgrade data into user or policy authority.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -24,6 +26,7 @@ extern crate std;
 
 pub mod capability;
 pub mod error;
+pub mod instruction;
 pub mod profile;
 pub mod receipt;
 pub mod resolver;
@@ -35,6 +38,10 @@ pub use capability::{
     ContextOperation, ContextRequest, ContextScope, ContextViewMask, MAX_SEARCH_RESULTS,
 };
 pub use error::{ContextError, ContextResult};
+pub use instruction::{
+    ContextSource, ContextTransform, InstructionLevel, InstructionPrivilegeError,
+    InstructionProvenance,
+};
 pub use profile::{
     ContextProfile, ContextProfileError, DerivedView, ProfileTrust, ProfileView,
     VerifiedContextProfile, CONTEXT_PROFILE_MAGIC, CONTEXT_PROFILE_VERSION, MAX_CONTEXT_RVF_BYTES,
