@@ -1,0 +1,44 @@
+name: Acquired Resource Activation
+
+on:
+  push:
+    paths:
+      - "crates/rvm-cap/**"
+      - "docs/adr/ADR-170-acquired-resource-activation.md"
+      - ".github/workflows/acquired-resource-activation.yml"
+  pull_request:
+    paths:
+      - "crates/rvm-cap/**"
+      - "docs/adr/ADR-170-acquired-resource-activation.md"
+      - ".github/workflows/acquired-resource-activation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    strategy:
+      matrix:
+        rust: ["1.77.2", "stable"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: clippy, rustfmt
+      - name: Environment
+        run: |
+          rustc -Vv
+          cargo -V
+          uname -a
+      - name: Format
+        run: cargo fmt -p rvm-cap -- --check
+      - name: Tests
+        run: cargo test -p rvm-cap --features std --locked
+      - name: Clippy
+        run: cargo clippy -p rvm-cap --all-targets --features std --locked -- -D warnings
+      - name: Dependency delta evidence
+        run: cargo tree -p rvm-cap --locked
+      - name: Frozen benchmark
+        run: cargo run -p rvm-cap --example acquired_resource_bench --features std --release --locked
