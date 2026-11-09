@@ -2860,7 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-launch"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "peak_alloc",
  "proptest",
@@ -2907,7 +2907,7 @@ dependencies = [
 
 [[package]]
 name = "rvm-rvf"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ed25519-dalek",
  "peak_alloc",

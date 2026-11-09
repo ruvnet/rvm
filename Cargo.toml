@@ -53,9 +53,9 @@ rvm-memory = { path = "crates/rvm-memory", version = "0.1.1" }
 rvm-coherence = { path = "crates/rvm-coherence", version = "0.1.1" }
 rvm-boot = { path = "crates/rvm-boot", version = "0.1.1" }
 rvm-wasm = { path = "crates/rvm-wasm", version = "0.1.2" }
-rvm-rvf = { path = "crates/rvm-rvf", version = "0.2.0" }
+rvm-rvf = { path = "crates/rvm-rvf", version = "0.2.1" }
 rvm-host = { path = "crates/rvm-host", version = "0.2.0" }
-rvm-launch = { path = "crates/rvm-launch", version = "0.2.0" }
+rvm-launch = { path = "crates/rvm-launch", version = "0.2.1" }
 rvm-context = { path = "crates/rvm-context", version = "0.1.3" }
 rvm-context-service = { path = "crates/rvm-context-service" }
 rvm-security = { path = "crates/rvm-security", version = "0.1.1" }
