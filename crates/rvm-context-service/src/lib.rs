@@ -14,6 +14,7 @@
 
 mod active_index;
 mod compiler;
+mod constellation;
 mod crypto;
 mod embed;
 mod error;
@@ -25,6 +26,9 @@ mod store;
 
 pub use compiler::{
     CompiledContextArtifact, ContextCompileRequest, DerivedContextView, RvfContextCompiler,
+};
+pub use constellation::{
+    compile_discovery_manifest, CompiledDiscoveryManifest, MAX_DISCOVERY_MANIFEST_BYTES,
 };
 pub use crypto::{DataKeyProvider, LocalKeyProvider, WrappedDataKey};
 pub use embed::{ContextEmbedder, HashEmbedder};
