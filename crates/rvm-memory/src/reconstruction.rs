@@ -216,31 +216,29 @@ impl<const MAX_DELTAS: usize> ReconstructionPipeline<MAX_DELTAS> {
 
         // Step 3: Apply deltas in sequence order.
         let mut deltas_applied = 0u32;
-        for i in 0..self.delta_count {
-            if let Some(delta) = &self.deltas[i] {
-                let data = delta_data_fn(delta);
+        for delta in self.deltas[..self.delta_count].iter().flatten() {
+            let data = delta_data_fn(delta);
 
-                // Validate delta bounds.
-                let end = delta.offset as usize + delta.length as usize;
-                if end > uncompressed_size {
-                    return Err(RvmError::CheckpointCorrupted);
-                }
-                if data.len() < delta.length as usize {
-                    return Err(RvmError::CheckpointCorrupted);
-                }
-
-                // Verify delta data integrity.
-                let data_hash = fnv1a_hash(&data[..delta.length as usize]);
-                if data_hash != delta.data_hash {
-                    return Err(RvmError::WitnessVerificationFailed);
-                }
-
-                // Apply the delta.
-                let offset = delta.offset as usize;
-                let length = delta.length as usize;
-                output[offset..offset + length].copy_from_slice(&data[..length]);
-                deltas_applied += 1;
+            // Validate delta bounds.
+            let end = delta.offset as usize + delta.length as usize;
+            if end > uncompressed_size {
+                return Err(RvmError::CheckpointCorrupted);
             }
+            if data.len() < delta.length as usize {
+                return Err(RvmError::CheckpointCorrupted);
+            }
+
+            // Verify delta data integrity.
+            let data_hash = fnv1a_hash(&data[..delta.length as usize]);
+            if data_hash != delta.data_hash {
+                return Err(RvmError::WitnessVerificationFailed);
+            }
+
+            // Apply the delta.
+            let offset = delta.offset as usize;
+            let length = delta.length as usize;
+            output[offset..offset + length].copy_from_slice(&data[..length]);
+            deltas_applied += 1;
         }
 
         // Compute final hash.

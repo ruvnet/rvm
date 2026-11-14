@@ -160,8 +160,8 @@ impl AttestationChain {
     /// Count boot measurement entries.
     fn boot_measurement_count(&self) -> u32 {
         let mut count = 0u32;
-        for i in 0..self.count {
-            if self.entries[i].source_tag == 0 {
+        for entry in &self.entries[..self.count] {
+            if entry.source_tag == 0 {
                 count += 1;
             }
         }
@@ -171,8 +171,8 @@ impl AttestationChain {
     /// Count runtime witness entries.
     fn runtime_witness_count(&self) -> u32 {
         let mut count = 0u32;
-        for i in 0..self.count {
-            if self.entries[i].source_tag == 1 {
+        for entry in &self.entries[..self.count] {
+            if entry.source_tag == 1 {
                 count += 1;
             }
         }

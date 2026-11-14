@@ -131,7 +131,7 @@ impl<const N: usize> WitnessLog<N> {
     /// error when `N == 0` because dividing by zero is a const-eval
     /// failure. This replaces the previous `assert!(N > 0)` runtime
     /// panic with a hard compile-time rejection.
-    const _ASSERT_N_NONZERO: () = assert!(N > 0, "witness log capacity must be > 0");
+    const ASSERT_N_NONZERO: () = assert!(N > 0, "witness log capacity must be > 0");
 
     /// Creates a new empty witness log.
     ///
@@ -142,7 +142,7 @@ impl<const N: usize> WitnessLog<N> {
     #[must_use]
     pub fn new() -> Self {
         // Reference the const to ensure the compile-time check fires.
-        let () = Self::_ASSERT_N_NONZERO;
+        let () = Self::ASSERT_N_NONZERO;
         Self {
             inner: Mutex::new(WitnessLogInner {
                 records: [WitnessRecord::zeroed(); N],
