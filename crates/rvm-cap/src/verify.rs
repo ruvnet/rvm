@@ -313,10 +313,7 @@ impl<const N: usize> ProofVerifier<N> {
         }
         // O(1) hash-indexed lookup instead of linear scan.
         let hash_slot = usize::try_from(nonce % NONCE_RING_SIZE as u64).unwrap_or(0);
-        if self.nonce_hash[hash_slot] == nonce {
-            return false;
-        }
-        true
+        self.nonce_hash[hash_slot] != nonce
     }
 
     /// Records a nonce as used and advances the watermark.

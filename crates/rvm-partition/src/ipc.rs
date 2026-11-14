@@ -51,7 +51,7 @@ const EMPTY_MSG: Option<IpcMessage> = None;
 impl<const CAPACITY: usize> MessageQueue<CAPACITY> {
     /// Const assertion: CAPACITY must be a power of two and non-zero.
     /// This enables efficient `& (CAPACITY - 1)` index wrapping.
-    const _CAPACITY_IS_POWER_OF_TWO: () = assert!(
+    const CAPACITY_IS_POWER_OF_TWO: () = assert!(
         CAPACITY > 0 && CAPACITY.is_power_of_two(),
         "MessageQueue CAPACITY must be a non-zero power of two"
     );
@@ -60,7 +60,7 @@ impl<const CAPACITY: usize> MessageQueue<CAPACITY> {
     #[must_use]
     pub fn new() -> Self {
         // Ensure the const assertion is evaluated.
-        () = Self::_CAPACITY_IS_POWER_OF_TWO;
+        () = Self::CAPACITY_IS_POWER_OF_TWO;
         Self {
             buffer: [EMPTY_MSG; CAPACITY],
             head: 0,

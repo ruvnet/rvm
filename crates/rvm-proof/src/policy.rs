@@ -200,10 +200,7 @@ impl PolicyEvaluator {
         }
         // O(1) hash-indexed lookup instead of linear scan.
         let hash_slot = usize::try_from(nonce % NONCE_RING_SIZE as u64).unwrap_or(0);
-        if self.nonce_hash[hash_slot] == nonce {
-            return true;
-        }
-        false
+        self.nonce_hash[hash_slot] == nonce
     }
 
     /// Record a nonce as used and advance the watermark on wrap.
